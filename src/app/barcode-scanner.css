@@ -1,0 +1,125 @@
+:host {
+  position: relative;
+  z-index: 40;
+}
+.scanner-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #14281bcc;
+  backdrop-filter: blur(4px);
+  z-index: 40;
+}
+.scanner-dialog {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 95dvh;
+  overflow: auto;
+  color: #2c4435;
+  box-shadow: 0 20px 90px #0004;
+}
+.scanner-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.scanner-heading h2 {
+  font-size: 21px;
+  margin: 0;
+}
+.scanner-heading button {
+  background: transparent;
+  color: #476d55;
+  font-size: 22px;
+  padding: 8px;
+}
+.scanner-dialog p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #657c69;
+}
+.scanner-preview {
+  position: relative;
+  background: #13251b;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 4/3;
+  min-height: 180px;
+}
+.scanner-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.scanner-frame {
+  position: absolute;
+  inset: 28% 8%;
+  border: 2px solid #7be2a4;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.scanner-dialog button {
+  border: 0;
+  border-radius: 7px;
+  background: #1c765b;
+  color: white;
+  padding: 13px 18px;
+  cursor: pointer;
+  min-height: 44px;
+  font-weight: 600;
+}
+.scanner-dialog button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.camera-start {
+  width: 100%;
+}
+.scanner-dialog form {
+  border-top: 1px solid #e2e9e2;
+  margin-top: 22px;
+  padding-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+.scanner-dialog label {
+  display: grid;
+  gap: 9px;
+  font-size: 12px;
+}
+.scanner-dialog input {
+  padding: 13px;
+  border: 1px solid #cddcce;
+  border-radius: 7px;
+  font-size: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.scanner-dialog small {
+  display: block;
+  margin-top: 18px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #7d8e7f;
+}
+@media (max-width: 600px) {
+  .scanner-backdrop {
+    padding: 0;
+    align-items: end;
+  }
+  .scanner-dialog {
+    max-width: 100%;
+    border-radius: 18px 18px 0 0;
+    padding: 22px 20px;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  }
+  .scanner-preview {
+    aspect-ratio: 1.2;
+  }
+}

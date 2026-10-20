@@ -1,0 +1,39 @@
+<div class="scanner-backdrop" role="presentation">
+  <section class="scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
+    <div class="scanner-heading">
+      <h2 id="scanner-title">Escanear código de barras</h2>
+      <button type="button" (click)="close()" aria-label="Cerrar escáner">✕</button>
+    </div>
+    <p>
+      Apunta la cámara trasera al código de la presentación. Mantén el envase quieto y bien
+      iluminado.
+    </p>
+    <div class="scanner-preview">
+      <video #preview autoplay muted playsinline aria-label="Vista de la cámara"></video>
+      <div class="scanner-frame"></div>
+    </div>
+    <p role="status" aria-live="polite">{{ status() }}</p>
+    <button
+      type="button"
+      class="camera-start"
+      [disabled]="starting() || running()"
+      (click)="start()"
+    >
+      {{ starting() ? 'Esperando permiso…' : running() ? 'Buscando código…' : 'Abrir cámara' }}
+    </button>
+    <form (ngSubmit)="submit()">
+      <label
+        >Código manual o lector USB<input
+          name="barcode"
+          [(ngModel)]="manual"
+          maxlength="100"
+          autocomplete="off"
+          placeholder="Escribe el código si no se puede leer" /></label
+      ><button type="submit" [disabled]="!manual.trim()">Usar código</button>
+    </form>
+    <small
+      >Solo se utiliza video. Las imágenes se procesan en tu dispositivo y no se guardan ni se
+      envían al servidor.</small
+    >
+  </section>
+</div>

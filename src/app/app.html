@@ -1,0 +1,917 @@
+@if (!user()) {
+  <div class="login">
+    <section class="login-story">
+      <div class="brand">
+        ✚ <span>SG <b>Farma</b></span>
+      </div>
+      <span class="eyebrow">TU FARMACIA, EN ORDEN</span>
+      <h1>Más claridad.<br />Mejor control.<br /><em>Cada día.</em></h1>
+      <p>
+        Productos, inventario y ventas en un solo lugar.<br />El cuidado empieza con una buena
+        gestión.
+      </p>
+      <small>◈ Control por lotes &nbsp; · &nbsp; Q Guatemala</small>
+    </section>
+    <form class="login-form" (ngSubmit)="login()">
+      <span class="eyebrow">BIENVENIDO A SG FARMA</span>
+      <h2>Inicia tu jornada</h2>
+      <p class="muted">Ingresa con tu cuenta personal para continuar.</p>
+      <label
+        >Usuario<input
+          name="username"
+          [(ngModel)]="username"
+          autocomplete="username"
+          required
+          placeholder="Tu usuario" /></label
+      ><label
+        >Contraseña<input
+          name="password"
+          [(ngModel)]="password"
+          type="password"
+          autocomplete="current-password"
+          required
+          placeholder="Tu contraseña"
+      /></label>
+      @if (error()) {
+        <div class="alert error" role="alert">{{ error() }}</div>
+      }
+      <button class="primary full" [disabled]="busy()">
+        {{ busy() ? 'Ingresando…' : 'Iniciar sesión →' }}</button
+      ><small>Acceso exclusivo para personal autorizado.<br />Sistema de control interno.</small>
+    </form>
+  </div>
+} @else {
+  <aside class="sidebar">
+    <a class="brand" (click)="go('Resumen')"
+      >✚ <span>SG <b>Farma</b></span></a
+    >
+    <div class="branch">
+      ⌂
+      <div>Sucursal principal<small>Guatemala · GTQ</small></div>
+      <span class="online"></span>
+    </div>
+    <span class="nav-label">ESPACIO DE TRABAJO</span>
+    <nav>
+      @for (n of visibleNav(); track n[1]) {
+        <button [class.active]="page() === n[1]" (click)="go(n[1])">
+          <span>{{ n[0] }}</span
+          >{{ n[1] }}
+          @if (n[1] === 'Inventario' && low().length) {
+            <b>{{ low().length }}</b>
+          }
+        </button>
+      }
+    </nav>
+    <div class="sidebar-foot">
+      <span class="internal">● Control interno</span>
+      <p>Todo en su lugar.<br />Más tiempo para cuidar.</p>
+      <div class="profile">
+        <div class="avatar">{{ user()!['username'].slice(0, 2).toUpperCase() }}</div>
+        <div>
+          {{ user()!['username'] }}<small>{{ user()!['role'] }}</small>
+        </div>
+        <button (click)="logout()" aria-label="Cerrar sesión">↪</button>
+      </div>
+    </div>
+  </aside>
+  <main>
+    <header>
+      <div class="breadcrumb">
+        Mi farmacia <span>/</span> <strong>{{ page() }}</strong>
+      </div>
+      <div class="header-right">
+        <span class="online"></span> Conectado
+        <button class="icon-button" (click)="reload()" aria-label="Actualizar">↻</button>
+      </div>
+    </header>
+    <div class="workspace">
+      <div class="page-heading">
+        <div>
+          <span class="eyebrow">{{ today }}</span>
+          <h1>{{ page() === 'Resumen' ? 'Tu farmacia, de un vistazo' : page() }}</h1>
+          <p class="muted">
+            {{
+              page() === 'Resumen'
+                ? 'Un buen día empieza con todo bajo control.'
+                : 'Gestiona tu operación con información al día.'
+            }}
+          </p>
+        </div>
+        @if (page() === 'Resumen' && canSell()) {
+          <button class="primary" (click)="go('Punto de venta')">＋ Nueva venta</button>
+        }
+        @if (page() === 'Catálogo' && canWrite()) {
+          <button class="primary" (click)="modal.set('product')">＋ Nuevo producto</button>
+        }
+        @if (['Catálogo', 'Inventario', 'Compras'].includes(page()) && canReceive()) {
+          <button class="primary scan-button" (click)="openScanner('inventory')">
+            ▣ Escanear ingreso
+          </button>
+        }
+        @if (page() === 'Compras' && canReceive()) {
+          <button class="primary" (click)="modal.set('receipt')">＋ Recibir compra</button>
+        }
+        @if (page() === 'Proveedores' && canReceive()) {
+          <button class="primary" (click)="modal.set('supplier')">＋ Nuevo proveedor</button>
+        }
+      </div>
+      @if (error()) {
+        <div class="alert error" role="alert">{{ error() }}</div>
+      }
+      @if (message()) {
+        <div class="alert success" role="status">{{ message() }}</div>
+      }
+      @if (page() === 'Resumen') {
+        <div class="stats">
+          <article>
+            <span>Ventas de hoy <i>↗</i></span>
+            <h2>{{ money(todayTotal()) }}</h2>
+            <small>{{ todaySales().length }} operaciones registradas</small>
+          </article>
+          <article>
+            <span>Productos en catálogo <i>✚</i></span>
+            <h2>{{ rows('products').length }}</h2>
+            <small>Presentaciones configuradas</small>
+          </article>
+          <article>
+            <span>Stock bajo <i class="amber">▤</i></span>
+            <h2>{{ low().length }} <em>productos</em></h2>
+            <small>Por debajo del mínimo establecido</small>
+          </article>
+          <article>
+            <span>Próximos a vencer <i class="rose">◷</i></span>
+            <h2>{{ expiring().length }} <em>lotes</em></h2>
+            <small>Dentro de los próximos 90 días</small>
+          </article>
+        </div>
+        <div class="overview-grid">
+          <section class="card">
+            <div class="card-heading">
+              <div>
+                <h3>Últimas ventas</h3>
+                <p class="muted">Actividad reciente de la sucursal</p>
+              </div>
+              <button class="text-button" (click)="go('Ventas')">Ver todas →</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Comprobante</th>
+                  <th>Fecha</th>
+                  <th>Pago</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (s of rows('sales').slice(0, 6); track s['id']) {
+                  <tr>
+                    <td>
+                      <b>#{{ s['id'] }}</b>
+                    </td>
+                    <td>{{ date(s['created_at']) }}</td>
+                    <td>
+                      <span class="pill">{{ s['method'] }}</span>
+                    </td>
+                    <td class="strong">{{ money(s['total']) }}</td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="4" class="empty">
+                      Aún no hay ventas.<small
+                        >Las operaciones aparecerán aquí al confirmar un cobro.</small
+                      >
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </section>
+          <section class="card">
+            <div class="card-heading">
+              <div>
+                <h3>Atención al inventario</h3>
+                <p class="muted">Planea tu próxima reposición</p>
+              </div>
+              <span class="badge">{{ low().length }}</span>
+            </div>
+            @for (p of low().slice(0, 5); track p['id']) {
+              <div class="stock-row">
+                <span class="product-icon">✚</span>
+                <div>
+                  <b>{{ p['name'] }}</b
+                  ><small>{{ p['sku'] }}</small>
+                </div>
+                <span class="pill warning">{{ p['stock'] }} {{ p['base_unit'] }}</span>
+              </div>
+            } @empty {
+              <div class="empty">✓ Sin alertas de stock bajo</div>
+            }
+            <button class="text-button card-link" (click)="go('Inventario')">
+              Revisar inventario →
+            </button>
+          </section>
+        </div>
+        <section class="welcome-banner">
+          <div class="banner-icon">✚</div>
+          <div>
+            <h3>Una operación clara, de principio a fin.</h3>
+            <p>Recibe tus compras por lote y mantén el control de cada unidad que vendes.</p>
+          </div>
+          <button (click)="go('Compras')">Ir a compras →</button>
+        </section>
+      }
+      @if (page() === 'Catálogo') {
+        <section class="card">
+          <div class="toolbar">
+            <input
+              class="search"
+              placeholder="⌕ Buscar por nombre, genérico o SKU…"
+              [ngModel]="search()"
+              (ngModelChange)="search.set($event)"
+            /><span class="muted">{{ filtered('products').length }} productos</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>SKU</th>
+                  <th>Categoría</th>
+                  <th>Unidad base</th>
+                  <th>Stock vendible</th>
+                  <th>Condición</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (p of filtered('products'); track p['id']) {
+                  <tr>
+                    <td>
+                      <b>{{ p['name'] }}</b
+                      ><small>{{ p['generic_name'] }}</small>
+                    </td>
+                    <td>{{ p['sku'] }}</td>
+                    <td>{{ p['category'] }}</td>
+                    <td>{{ p['base_unit'] }}</td>
+                    <td>
+                      <span class="pill" [class.warning]="p['stock'] <= p['minimum_stock']">{{
+                        p['stock']
+                      }}</span>
+                    </td>
+                    <td>
+                      {{
+                        p['controlled'] ? 'Controlado' : p['requires_rx'] ? 'Con receta' : 'General'
+                      }}
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="6" class="empty">
+                      No hay productos. Registra el primero para empezar.
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+      @if (page() === 'Inventario') {
+        <div class="tabs">
+          <b>Lotes y vencimientos</b><span>{{ rows('inventory').length }} lotes registrados</span>
+        </div>
+        <section class="card table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Lote</th>
+                <th>Vencimiento</th>
+                <th>Estado</th>
+                <th>Existencia base</th>
+                <th>Costo unitario</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (l of rows('inventory'); track l['id']) {
+                <tr>
+                  <td>
+                    <b>{{ l['product_name'] }}</b>
+                  </td>
+                  <td>{{ l['code'] }}</td>
+                  <td>{{ date(l['expires_on']) }}</td>
+                  <td>
+                    <span class="pill" [class.warning]="l['expires_on'] <= dayKey">{{
+                      l['expires_on'] <= dayKey ? 'Vencido / bloqueado' : l['state']
+                    }}</span>
+                  </td>
+                  <td>{{ l['qty_base'] }} {{ l['base_unit'] }}</td>
+                  <td>{{ money(l['unit_cost']) }}</td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="6" class="empty">Sin lotes. Registra una recepción en Compras.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+        <h3 class="section-title">Kardex · últimos movimientos</h3>
+        <section class="card table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Producto / lote</th>
+                <th>Tipo</th>
+                <th>Unidades base</th>
+                <th>Referencia</th>
+                <th>Usuario</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (m of rows('movements'); track m['id']) {
+                <tr>
+                  <td>
+                    {{ m['product_name'] }}<small>{{ m['code'] }}</small>
+                  </td>
+                  <td>{{ m['kind'] }}</td>
+                  <td [class.positive]="m['delta_base'] > 0">
+                    {{ m['delta_base'] > 0 ? '+' : '' }}{{ m['delta_base'] }}
+                  </td>
+                  <td>{{ m['reference'] }}</td>
+                  <td>{{ m['actor'] }}</td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="5" class="empty">Sin movimientos registrados.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+      @if (page() === 'Proveedores') {
+        <div class="supplier-grid">
+          @for (s of rows('suppliers'); track s['id']) {
+            <article class="card supplier">
+              <span class="product-icon">◇</span>
+              <h3>{{ s['name'] }}</h3>
+              <p class="muted">NIT {{ s['nit'] || 'Sin registrar' }}</p>
+              <p>{{ s['contact'] || 'Sin contacto registrado' }}</p>
+              <small>Entrega estimada: {{ s['lead_days'] }} días</small>
+            </article>
+          } @empty {
+            <section class="card empty">Agrega tus proveedores para registrar compras.</section>
+          }
+        </div>
+      }
+      @if (page() === 'Compras') {
+        <section class="card table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Recepción</th>
+                <th>Proveedor</th>
+                <th>Documento</th>
+                <th>Fecha</th>
+                <th>Recibió</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of rows('receipts'); track r['id']) {
+                <tr>
+                  <td>
+                    <b>#{{ r['id'] }}</b>
+                  </td>
+                  <td>{{ r['supplier'] }}</td>
+                  <td>{{ r['document'] }}</td>
+                  <td>{{ date(r['created_at']) }}</td>
+                  <td>{{ r['actor'] }}</td>
+                  <td><span class="pill">Recibida</span></td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="6" class="empty">No hay recepciones registradas.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+      @if (page() === 'Punto de venta') {
+        <div class="pos">
+          <section>
+            <div class="toolbar">
+              <input
+                class="search"
+                placeholder="⌕ Nombre, SKU o código de barras…"
+                [ngModel]="search()"
+                (ngModelChange)="search.set($event)"
+              />
+              <button class="primary scan-button" type="button" (click)="openScanner('sale')">
+                ▣ Escanear código
+              </button>
+            </div>
+            <div class="pos-products">
+              @for (p of filtered('presentations'); track p['id']) {
+                <button class="card pos-product" (click)="add(p)" [disabled]="p['controlled']">
+                  <span class="product-icon">✚</span><b>{{ p['product_name'] }}</b
+                  ><small>{{ p['name'] }} · {{ p['factor'] }} unidades base</small>
+                  <div>
+                    <strong>{{ money(p['price']) }}</strong
+                    ><span>＋</span>
+                  </div>
+                  <small>{{ stock(p['product_id']) }} unidades disponibles</small>
+                </button>
+              } @empty {
+                <div class="empty">Sin resultados. Crea productos en Catálogo.</div>
+              }
+            </div>
+          </section>
+          <section class="card cart">
+            <div class="card-heading">
+              <h3>Venta actual</h3>
+              <span class="pill">{{ cart().length }} artículos</span>
+            </div>
+            @if (!activeCash()) {
+              <div class="alert error">
+                {{
+                  automaticCash()
+                    ? 'Caja cerrada por horario. Apertura automática a las 06:00.'
+                    : 'Abre tu caja para poder cobrar.'
+                }}
+              </div>
+            }
+            @for (l of cart(); track l['id']) {
+              <div class="cart-line">
+                <b>{{ l['product_name'] }}</b
+                ><small>{{ l['name'] }} · {{ money(l['price']) }}</small>
+                <div>
+                  <div class="quantity">
+                    <button (click)="quantity(l['id'], -1)">−</button
+                    ><span>{{ l['quantity'] }}</span
+                    ><button (click)="quantity(l['id'], 1)">＋</button>
+                  </div>
+                  <strong>{{ money(l['price'] * l['quantity']) }}</strong>
+                </div>
+              </div>
+            } @empty {
+              <div class="empty">Agrega productos para iniciar la venta.</div>
+            }
+            <div class="cart-bottom">
+              <div class="total">
+                <span>Total</span><b>{{ money(total()) }}</b>
+              </div>
+              <label
+                >Método de pago<select [(ngModel)]="payment">
+                  <option value="CASH">Efectivo</option>
+                  <option value="CARD">Tarjeta (registro)</option>
+                  <option value="TRANSFER">Transferencia</option>
+                </select></label
+              ><label
+                >Importe recibido<input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  [(ngModel)]="tendered" /></label
+              ><label class="check"
+                ><input type="checkbox" [(ngModel)]="prescription" /> Receta revisada cuando
+                corresponde</label
+              ><button
+                class="primary full"
+                [disabled]="busy() || !cart().length || !activeCash()"
+                (click)="checkout()"
+              >
+                {{ busy() ? 'Confirmando…' : 'Confirmar cobro →' }}</button
+              ><small class="muted">Comprobante de control interno</small>
+            </div>
+          </section>
+        </div>
+      }
+      @if (page() === 'Caja') {
+        <div class="overview-grid">
+          <section class="card cash-form">
+            <span class="eyebrow">{{
+              automaticCash() ? 'CAJA DIARIA AUTOMÁTICA' : 'MI TURNO'
+            }}</span>
+            <h2>{{ activeCash() ? 'Caja abierta' : 'Caja cerrada' }}</h2>
+            <p class="muted">
+              {{
+                automaticCash()
+                  ? 'Apertura a las 06:00 y cierre a las 00:00, hora de Guatemala. No requiere una persona conectada.'
+                  : activeCash()
+                    ? 'Cuenta el efectivo disponible antes de cerrar tu turno.'
+                    : 'Registra el fondo inicial para empezar a vender.'
+              }}
+            </p>
+            @if (automaticCash()) {
+              <p class="muted">
+                Fondo inicial: {{ money(activeCash()?.['opening']) }}. El cierre calcula el efectivo
+                esperado; el arqueo físico queda pendiente.
+              </p>
+              <p class="muted">
+                La computadora y el sistema deben permanecer encendidos. Si se interrumpen, se
+                recupera el cierre pendiente al reiniciar.
+              </p>
+            } @else {
+              <label
+                >{{ activeCash() ? 'Efectivo contado' : 'Fondo de apertura'
+                }}<input type="number" min="0" step="0.01" [(ngModel)]="amount" /></label
+              ><button class="primary" [disabled]="busy()" (click)="cashAction()">
+                {{ activeCash() ? 'Cerrar y calcular diferencia' : 'Abrir caja' }}
+              </button>
+            }
+          </section>
+          <section class="card table-scroll">
+            <div class="card-heading">
+              <h3>
+                {{ automaticCash() ? 'Cajas diarias de la sucursal' : 'Mis turnos recientes' }}
+              </h3>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Turno</th>
+                  <th>Fondo</th>
+                  <th>Esperado</th>
+                  <th>Diferencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of rows('cash'); track c['id']) {
+                  <tr>
+                    <td>
+                      #{{ c['id']
+                      }}<small
+                        >{{ c['closed_at'] ? 'Cerrada' : 'Abierta'
+                        }}{{ c['automatic'] ? ' · Automática' : '' }}</small
+                      ><small>{{ date(c['business_date'] || c['opened_at']) }}</small>
+                    </td>
+                    <td>{{ money(c['opening']) }}</td>
+                    <td>{{ c['expected'] === null ? '—' : money(c['expected']) }}</td>
+                    <td>
+                      {{
+                        c['difference'] === null
+                          ? c['closed_at']
+                            ? 'Arqueo pendiente'
+                            : '—'
+                          : money(c['difference'])
+                      }}
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="4" class="empty">Aún no hay turnos.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </section>
+        </div>
+      }
+      @if (page() === 'Ventas') {
+        <section class="card table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Comprobante</th>
+                <th>Fecha</th>
+                <th>Usuario</th>
+                <th>Método</th>
+                <th>Total</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (s of rows('sales'); track s['id']) {
+                <tr>
+                  <td>
+                    <b>#{{ s['id'] }}</b>
+                  </td>
+                  <td>{{ date(s['created_at']) }}</td>
+                  <td>{{ s['actor'] }}</td>
+                  <td>{{ s['method'] }}</td>
+                  <td class="strong">{{ money(s['total']) }}</td>
+                  <td>
+                    <button class="text-button" (click)="showTicket(s['id'])">
+                      Ver comprobante →
+                    </button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="6" class="empty">Las ventas confirmadas aparecerán aquí.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+      @if (page() === 'Auditoría') {
+        <section class="card table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Evento</th>
+                <th>Usuario</th>
+                <th>Referencia</th>
+                <th>Fecha</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (a of rows('audit'); track a['id']) {
+                <tr>
+                  <td>{{ a['action'] }}</td>
+                  <td>{{ a['actor'] }}</td>
+                  <td>{{ a['reference'] }}</td>
+                  <td>{{ date(a['created_at']) }}</td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="4" class="empty">Sin eventos.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+      <footer>SG Farma <span>Gestión farmacéutica · Control interno</span></footer>
+    </div>
+  </main>
+}
+@if (modal()) {
+  <div class="overlay">
+    <section class="dialog">
+      <div class="card-heading">
+        <h2>
+          {{
+            modal() === 'product'
+              ? 'Nuevo producto'
+              : modal() === 'supplier'
+                ? 'Nuevo proveedor'
+                : 'Recibir compra'
+          }}
+        </h2>
+        <button class="icon-button" (click)="modal.set('')" aria-label="Cerrar">✕</button>
+      </div>
+      @if (error()) {
+        <div class="alert error">{{ error() }}</div>
+      }
+      @if (modal() === 'product') {
+        <form (ngSubmit)="saveProduct()">
+          <div class="form-grid">
+            <label>Nombre comercial<input name="name" [(ngModel)]="product.name" required /></label
+            ><label>SKU<input name="sku" [(ngModel)]="product.sku" required /></label
+            ><label
+              >Principio activo / genérico<input
+                name="generic"
+                [(ngModel)]="product.genericName" /></label
+            ><label>Unidad base<input name="base" [(ngModel)]="product.baseUnit" required /></label
+            ><label>Categoría<input name="category" [(ngModel)]="product.category" /></label
+            ><label
+              >Stock mínimo<input
+                name="min"
+                type="number"
+                min="0"
+                [(ngModel)]="product.minimumStock"
+                required
+            /></label>
+          </div>
+          <label class="check"
+            ><input name="rx" type="checkbox" [(ngModel)]="product.requiresRx" /> Requiere
+            receta</label
+          ><label class="check"
+            ><input name="controlled" type="checkbox" [(ngModel)]="product.controlled" /> Controlado
+            (venta bloqueada)</label
+          ><label class="check"
+            ><input name="fractional" type="checkbox" [(ngModel)]="product.fractional" />
+            Fraccionamiento autorizado para este producto</label
+          >
+          <h3>Presentaciones</h3>
+          @for (v of product.presentations; track $index; let i = $index) {
+            <div class="presentation-form">
+              <label>Nombre<input [name]="'pn' + i" [(ngModel)]="v.name" required /></label
+              ><label
+                >Unidades base<input
+                  [name]="'pf' + i"
+                  type="number"
+                  min="1"
+                  [(ngModel)]="v.factor"
+                  required /></label
+              ><label
+                >Precio (Q)<input
+                  [name]="'pp' + i"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  [(ngModel)]="v.price"
+                  required /></label
+              ><label
+                >Código de barras<input [name]="'pb' + i" [(ngModel)]="v.barcode" /><button
+                  class="text-button scan-button"
+                  type="button"
+                  (click)="openScanner('product', i)"
+                >
+                  ▣ Escanear con cámara
+                </button></label
+              ><label class="check"
+                ><input [name]="'px' + i" type="checkbox" [(ngModel)]="v.fractional" />
+                Fraccionada</label
+              ><button
+                class="text-button"
+                type="button"
+                (click)="product.presentations.splice(i, 1)"
+                [disabled]="product.presentations.length === 1"
+              >
+                Quitar
+              </button>
+            </div>
+          }
+          <button
+            type="button"
+            class="text-button"
+            (click)="
+              product.presentations.push({
+                name: 'Unidad',
+                factor: 1,
+                price: 0,
+                barcode: '',
+                fractional: true,
+              })
+            "
+          >
+            ＋ Agregar presentación
+          </button>
+          <div class="dialog-actions">
+            <button class="primary" [disabled]="busy()">Guardar producto</button>
+          </div>
+        </form>
+      }
+      @if (modal() === 'supplier') {
+        <form (ngSubmit)="saveSupplier()">
+          <label>Nombre<input name="sn" [(ngModel)]="supplier.name" required /></label
+          ><label>NIT<input name="nit" [(ngModel)]="supplier.nit" /></label
+          ><label>Contacto<input name="contact" [(ngModel)]="supplier.contact" /></label
+          ><label
+            >Tiempo de entrega (días)<input
+              name="lead"
+              type="number"
+              min="0"
+              [(ngModel)]="supplier.leadDays"
+              required
+          /></label>
+          <div class="dialog-actions">
+            <button class="primary" [disabled]="busy()">Guardar proveedor</button>
+          </div>
+        </form>
+      }
+      @if (modal() === 'receipt') {
+        <form (ngSubmit)="saveReceipt()">
+          <div class="form-grid">
+            <label
+              >Proveedor<select name="rs" [(ngModel)]="receipt.supplierId" required>
+                <option [ngValue]="0" disabled>Selecciona proveedor</option>
+                @for (s of rows('suppliers'); track s['id']) {
+                  <option [ngValue]="s['id']">{{ s['name'] }}</option>
+                }
+              </select></label
+            ><label
+              >Documento del proveedor<input name="doc" [(ngModel)]="receipt.document" required
+            /></label>
+          </div>
+          @for (l of receipt.lines; track $index; let i = $index) {
+            <div class="receipt-line">
+              <button
+                type="button"
+                class="text-button scan-button"
+                (click)="openScanner('receipt', i)"
+              >
+                ▣ Escanear esta línea
+              </button>
+              <label
+                >Producto / presentación<select
+                  [name]="'rp' + i"
+                  [(ngModel)]="l.presentationId"
+                  required
+                >
+                  <option [ngValue]="0" disabled>Selecciona presentación</option>
+                  @for (p of rows('presentations'); track p['id']) {
+                    <option [ngValue]="p['id']">
+                      {{ p['product_name'] }} · {{ p['name'] }} (×{{ p['factor'] }})
+                    </option>
+                  }
+                </select></label
+              >
+              <div class="form-grid">
+                <label
+                  >Cantidad de presentaciones<input
+                    [name]="'rq' + i"
+                    type="number"
+                    min="1"
+                    [(ngModel)]="l.quantity"
+                    required /></label
+                ><label>Lote<input [name]="'rl' + i" [(ngModel)]="l.lot" required /></label
+                ><label
+                  >Vencimiento<input
+                    [name]="'re' + i"
+                    type="date"
+                    [(ngModel)]="l.expiresOn"
+                    required /></label
+                ><label
+                  >Costo total de la línea (Q)<input
+                    [name]="'rc' + i"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    [(ngModel)]="l.totalCost"
+                    required
+                /></label>
+              </div>
+              <button
+                type="button"
+                class="text-button"
+                (click)="receipt.lines.splice(i, 1)"
+                [disabled]="receipt.lines.length === 1"
+              >
+                Quitar línea
+              </button>
+            </div>
+          }
+          <button type="button" class="text-button" (click)="receipt.lines.push(emptyLine())">
+            ＋ Agregar lote / línea
+          </button>
+          <p class="muted">
+            Se convertirá cada presentación a unidades base. La recepción confirmada no se puede
+            borrar.
+          </p>
+          <div class="dialog-actions">
+            <button class="primary" [disabled]="busy() || !receipt.supplierId">
+              Confirmar recepción
+            </button>
+          </div>
+        </form>
+      }
+    </section>
+  </div>
+}
+@if (unknownBarcode()) {
+  <div class="overlay unknown-scan">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="unknown-title">
+      <h2 id="unknown-title">Código no registrado</h2>
+      <p>
+        Código: <strong>{{ unknownBarcode() }}</strong>
+      </p>
+      <p class="muted">
+        No existe una presentación con este código. No se ha modificado el inventario ni creado una
+        venta.
+      </p>
+      @if (canWrite()) {
+        <button class="primary" (click)="registerScannedProduct()">Registrar producto nuevo</button>
+      } @else {
+        <p>Un administrador o supervisor debe registrar el producto antes de utilizarlo.</p>
+      }
+      <button type="button" class="text-button" (click)="dismissUnknownBarcode()">
+        Volver sin registrar
+      </button>
+    </section>
+  </div>
+}
+@if (scanTarget()) {
+  <app-barcode-scanner (scanned)="handleBarcode($event)" (dismissed)="scanTarget.set(null)" />
+}
+@if (ticket(); as t) {
+  <div class="overlay receipt-overlay">
+    <section class="dialog ticket">
+      <div class="card-heading no-print">
+        <h3>Comprobante</h3>
+        <button class="icon-button" (click)="ticket.set(null)">✕</button>
+      </div>
+      <div class="ticket-content">
+        <h2>✚ SG Farma</h2>
+        <p>CONTROL INTERNO · #{{ t['sale']['id'] }}</p>
+        <p>{{ date(t['sale']['created_at']) }}</p>
+        <hr />
+        @for (l of t['lines']; track l['id']) {
+          <div class="ticket-line">
+            <span
+              >{{ l['product_name']
+              }}<small
+                >{{ l['quantity'] }} × {{ l['presentation_name'] }} · {{ money(l['price']) }}</small
+              ></span
+            ><b>{{ money(l['quantity'] * l['price']) }}</b>
+          </div>
+        }
+        <hr />
+        <div class="total">
+          <span>Total</span><b>{{ money(t['sale']['total']) }}</b>
+        </div>
+        <p>
+          Recibido: {{ money(t['sale']['tendered']) }}<br />Cambio:
+          {{ money(t['sale']['change_amount']) }}
+        </p>
+        <small>{{ t['notice'] }}</small>
+      </div>
+      <button class="primary full no-print" (click)="print()">Imprimir comprobante</button>
+    </section>
+  </div>
+}
