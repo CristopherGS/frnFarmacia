@@ -8,7 +8,7 @@ Para iniciar el sistema completo nativo en Windows, usar `INICIAR-LOCAL.cmd` des
 
 `npm ci` y `npm run dev`. Abrir http://localhost:4200; la API debe estar en http://localhost:8080. El proxy de desarrollo mantiene la sesión y protección CSRF en el mismo origen.
 
-Producción usa exclusivamente la imagen Nginx del Dockerfile, puerto 80. `npm start` y `npm run dev` están disponibles solo para desarrollo y escuchan en 0.0.0.0:4200. Coolify debe usar la estrategia Dockerfile, sin sustituir el comando de Nginx por npm start. Los iniciadores locales de Windows siguen usando Angular CLI directamente.
+Producción usa preferentemente la imagen Nginx del Dockerfile, puerto 80. `npm run dev` es solo para desarrollo (Angular CLI en 0.0.0.0:4200). `npm start` sirve el build de producción (`npm run build` antes) con `scripts/serve.mjs`: archivos estáticos con respaldo SPA, `/healthz` y proxy de `/api/` hacia `API_UPSTREAM`; escucha en `PORT` (4200 por defecto). Es la red de seguridad si Coolify usa Railpack en lugar del Dockerfile; en Coolify con Railpack, definir `PORT=80` o exponer 4200. Los iniciadores locales de Windows siguen usando Angular CLI directamente.
 
 `npm run build` genera `dist/farmacia-web/browser`. El contenedor Nginx usa `API_UPSTREAM` para reenviar `/api/` al backend privado. En Coolify publicar con HTTPS y configurar API con `COOKIE_SECURE=true`.
 

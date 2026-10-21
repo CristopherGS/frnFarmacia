@@ -2,7 +2,7 @@
 
 Diagnóstico conjunto, pruebas realizadas y comandos para el servidor: [DIAGNOSTICO_DESPLIEGUE.md](DIAGNOSTICO_DESPLIEGUE.md).
 
-Los registros recibidos muestran compilación Angular terminada, pero construcción mediante **Railpack** con Node 22 y arranque `npm run start`. Los comandos npm start y npm run dev son exclusivamente de desarrollo; producción debe usar el Dockerfile con Nginx. La versión de desarrollo escucha explícitamente en 0.0.0.0:4200.
+Los registros recibidos muestran compilación Angular terminada, pero construcción mediante **Railpack** con Node 22 y arranque `npm run start`. `npm run dev` es exclusivamente de desarrollo. `npm start` ahora sirve el build de producción con `scripts/serve.mjs` (estáticos, `/healthz` y proxy `/api/` hacia `API_UPSTREAM`, puerto `PORT` o 4200), de modo que Railpack también funciona; aun así, producción debe usar el Dockerfile con Nginx.
 
 ## Configuración de esta aplicación
 
