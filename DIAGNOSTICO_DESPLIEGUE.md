@@ -46,19 +46,21 @@ Ambos repositorios: rama `main`, estrategia **Dockerfile**, directorio `/`, arch
 
 | Recurso | Dominio | Puerto interno | Healthcheck HTTP |
 |---|---|---|---|
-| Frontend | `https://med.sglabs.lat` | 80 | `/healthz` |
-| Backend | `https://bknmed.sglabs.lat` | 8080 | `/actuator/health/readiness` |
+| Frontend | `http://med.sglabs.lat` | 80 | `/healthz` |
+| Backend | `http://bknmed.sglabs.lat` (alias de red `bkn-api`) | 8080 | `/actuator/health/readiness`, periodo de arranque 60 s |
 | PostgreSQL | Sin dominio público | 5432 | Interno |
+
+Los dominios llevan `http://` en Coolify porque Cloudflare termina el TLS y el Tunnel (CT102, `*.sglabs.lat` → `http://192.168.0.33:80`) entrega HTTP a Traefik. CT104 `sglabs-coolify` (`192.168.0.33`) tiene 4 cores, 6 GB de RAM y 2 GB de swap: con 2 cores / 4 GB las compilaciones de Angular y Maven eran muy lentas.
 
 Frontend, variable de **ejecución**, no argumento de build:
 
 ```env
-API_UPSTREAM=http://<alias-real-del-backend-en-coolify>:8080
+API_UPSTREAM=http://bkn-api:8080
 ```
 
-No pegar el marcador literalmente. También se admite `https://bknmed.sglabs.lat`, sin ruta ni barra final, pero el desafío de Cloudflare actualmente observado impediría esa comunicación automática. La ruta privada evita ese desafío. El navegador usa `/api/v1` en el dominio del frontend, conservando sesión y CSRF sin CORS entre dominios.
+`bkn-api` es el *Custom network alias* del backend en Coolify. También se admite `https://bknmed.sglabs.lat`, sin ruta ni barra final, pero el desafío de Cloudflare actualmente observado impediría esa comunicación automática. La ruta privada evita ese desafío. El navegador usa `/api/v1` en el dominio del frontend, conservando sesión y CSRF sin CORS entre dominios.
 
-Backend, variables de ejecución:
+Backend, variables de ejecución (solo **Runtime**):
 
 ```env
 DATABASE_URL=jdbc:postgresql://aitoljax7dqzmdbgydq7nlsz:5432/farmacia
@@ -66,7 +68,6 @@ DATABASE_USERNAME=<usuario-de-la-aplicacion>
 DATABASE_PASSWORD=<secreto>
 BOOTSTRAP_ADMIN_PASSWORD=<secreto-inicial>
 PORT=8080
-SERVER_ADDRESS=0.0.0.0
 COOKIE_SECURE=true
 ```
 
@@ -110,4 +111,4 @@ Después de desplegar, repetir las consultas HTTP y comprobar que no aumenta el 
 
 ## Pendiente remoto
 
-Faltan los logs de ejecución completos del backend, el alias interno real, comprobar las redes y variables configuradas, ejecutar la verificación entre contenedores, y validar Traefik/Tunnel después del despliegue. Los accesos públicos continúan sin validación funcional por el desafío de Cloudflare. Este informe no declara que producción esté operativa.
+Faltan los logs de ejecución completos del backend, comprobar que el alias `bkn-api` esté realmente configurado y que ambas aplicaciones compartan red, comprobar las variables configuradas, ejecutar la verificación entre contenedores, y validar Traefik/Tunnel después del despliegue. Los accesos públicos continúan sin validación funcional por el desafío de Cloudflare. Este informe no declara que producción esté operativa.
