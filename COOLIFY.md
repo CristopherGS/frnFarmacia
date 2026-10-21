@@ -39,6 +39,8 @@ La imagen incorpora healthcheck `/healthz`. Esta comprobación confirma el servi
 
 El frontend ahora puede arrancar aunque el nombre de la API todavía no resuelva; en ese caso solo las llamadas `/api/` fallan y debe completarse la conexión al backend.
 
+Si todavía se ejecuta temporalmente `ng serve`, `angular.json` permite explícitamente `med.sglabs.lat`: se observó un 403 de Angular por dominio rechazado. Esta compatibilidad no sustituye seleccionar Dockerfile/Nginx en producción. Una comprobación posterior del backend por el proxy devolvió 404; revisar también su dominio y ruta en Coolify.
+
 ## Alcance del diagnóstico
 
 El archivo recibido termina durante la construcción de imagen: no incluye imagen exportada, contenedor arrancado ni verificación final de salud. No demuestra un despliegue exitoso ni permite afirmar un error de memoria/disco. El mensaje inicial `No such container` corresponde a la limpieza del auxiliar, no a la compilación Angular.

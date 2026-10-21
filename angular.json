@@ -81,6 +81,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "allowedHosts": ["med.sglabs.lat"]
+          },
           "configurations": {
             "production": {
               "buildTarget": "farmacia-web:build:production"

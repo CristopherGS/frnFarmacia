@@ -10,6 +10,7 @@
 - El backend tenía un `ApplicationRunner` que, después del arranque de Tomcat, rechazaba una base nueva sin `BOOTSTRAP_ADMIN_PASSWORD` válida. Se reprodujo ese fallo y se trasladó la inicialización después de Flyway y antes de aceptar tráfico. Esto es un defecto comprobado del código, **no prueba que sea la excepción del servidor remoto**. Falta su registro desde `Application run failed`/`Caused by`.
 - Flyway administrado por Spring Boot advertía sobre PostgreSQL 18, pero las tres migraciones pasaron en PostgreSQL 18.6. Se actualizó solamente Flyway a 11.20.3 y se repitieron las pruebas; no se modificaron migraciones existentes.
 - Una petición directa a `192.168.0.33:80` con los encabezados Host de ambos dominios devolvió **502**, tanto para `/healthz` del frontend como para `/actuator/health` del backend. El fallo del origen existe independientemente de Cloudflare.
+- En la repetición posterior, el frontend cambió a **403** con el mensaje de Angular `This host ("med.sglabs.lat") is not allowed`, confirmando que continúa activo el servidor de desarrollo. Se añadió exclusivamente ese dominio a `serve.options.allowedHosts` como compatibilidad temporal; no se desactivó el control de hosts. El backend cambió a **404** con `404 page not found`, por lo que también debe revisarse la ruta/dominio de Traefik. Esa respuesta por sí sola no identifica si la aplicación inició correctamente.
 - Las peticiones HTTPS públicas devolvieron **403** y `Cf-Mitigated: challenge`. Sin acceso al panel de Cloudflare no se puede identificar la regla ni verificar el Tunnel. No se modificaron sus protecciones.
 
 ## Cambios y validaciones
@@ -33,8 +34,11 @@ Resultados locales, sin ejecutar Docker:
 | Nginx → API: sesión, consultas, CSRF y logout | Aprobados con datos locales existentes |
 | HTTPS reenviado y cookie CSRF Secure | Aprobados |
 | Validador de upstream | HTTP/HTTPS válidos aceptados; URL con ruta rechazada |
+| Angular de desarrollo con Host med.sglabs.lat / dominio ajeno | 200 / 403 tras reiniciar; control de hosts conservado |
 
 La compilación local del backend usó el JDK 25 disponible con destino Java 21. CI y Dockerfile usan Java 21. Las imágenes Linux no se construyeron localmente; los workflows de GitHub realizan esa comprobación. La base local persistente no se actualizó a PostgreSQL 18 ni se borró: las pruebas de 18 usan bases temporales independientes.
+
+Tras subir ambos proyectos, la API de GitHub Actions devolvió cero ejecuciones registradas en ambos repositorios. No se afirma que los workflows ni las imágenes hayan pasado en GitHub: comprobar que Actions esté habilitado y ejecutar los controles antes de considerar validada la imagen Linux.
 
 ## Configuración final en Coolify
 
