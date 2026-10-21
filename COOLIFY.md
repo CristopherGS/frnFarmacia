@@ -1,5 +1,7 @@
 # Frontend en Coolify
 
+Diagnóstico conjunto, pruebas realizadas y comandos para el servidor: [DIAGNOSTICO_DESPLIEGUE.md](DIAGNOSTICO_DESPLIEGUE.md).
+
 Los registros recibidos muestran compilación Angular terminada, pero construcción mediante **Railpack** con Node 22 y arranque `npm run start`. Los comandos npm start y npm run dev son exclusivamente de desarrollo; producción debe usar el Dockerfile con Nginx. La versión de desarrollo escucha explícitamente en 0.0.0.0:4200.
 
 ## Configuración de esta aplicación

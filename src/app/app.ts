@@ -165,11 +165,13 @@ export class App implements OnDestroy {
         this.unknownBarcode.set('');
         this.pendingScan = null;
       }
-      let message = 'No se pudo completar la operación (' + r.status + ').';
+      let message = [502, 503, 504].includes(r.status)
+        ? 'El servicio de la farmacia no está disponible. Intenta de nuevo en unos momentos.'
+        : 'No se pudo completar la operación (' + r.status + ').';
       try {
         message = (await r.json()).message || message;
       } catch {}
-      throw new Error(message);
+      throw Object.assign(new Error(message), { status: r.status });
     }
     return r.status === 204 ? null : r.json();
   }
@@ -191,7 +193,15 @@ export class App implements OnDestroy {
       this.csrf = (await this.request('/auth/csrf')).token;
       this.user.set(await this.request('/auth/me'));
       await this.refresh();
-    } catch {}
+    } catch (error) {
+      if ((error as { status?: number }).status !== 401) {
+        this.error.set(
+          (error as { status?: number }).status
+            ? (error as Error).message
+            : 'No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.',
+        );
+      }
+    }
   }
   async login() {
     await this.run(async () => {

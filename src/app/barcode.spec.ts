@@ -5,6 +5,7 @@ import { BarcodeScanner } from './barcode-scanner';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 const decoder = vi.hoisted(() => ({ decode: vi.fn() }));
+const restoreSession = App.prototype.restore;
 vi.mock('@zxing/browser', () => ({
   BrowserMultiFormatReader: class {
     decodeFromStream = decoder.decode;
@@ -34,6 +35,20 @@ describe('Flujos por código de barras', () => {
   afterEach(() => {
     fixture.destroy();
     vi.restoreAllMocks();
+  });
+  it('muestra una falla del servicio durante el acceso en lugar de ocultarla', async () => {
+    vi.spyOn(app, 'request').mockRejectedValue(
+      Object.assign(new Error('Servicio no disponible'), { status: 502 }),
+    );
+    await restoreSession.call(app);
+    expect(app.error()).toBe('Servicio no disponible');
+  });
+  it('una sesión ausente es una pantalla de acceso normal, no un fallo del servidor', async () => {
+    vi.spyOn(app, 'request')
+      .mockResolvedValueOnce({ token: 'test' })
+      .mockRejectedValueOnce(Object.assign(new Error('Sin sesión'), { status: 401 }));
+    await restoreSession.call(app);
+    expect(app.error()).toBe('');
   });
   it('selecciona la presentación exacta y conserva ceros iniciales al vender', () => {
     app.openScanner('sale');

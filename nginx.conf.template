@@ -1,3 +1,8 @@
+map $http_x_forwarded_proto $external_scheme {
+ default $scheme;
+ https https;
+ http http;
+}
 server {
  listen 0.0.0.0:80;
  server_tokens off;
@@ -10,8 +15,12 @@ server {
  location ^~ /api/ {
   proxy_pass $backend_url$request_uri;
   proxy_ssl_server_name on;
+  proxy_ssl_verify on;
+  proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
   proxy_set_header Host $proxy_host;
-  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header X-Forwarded-Proto $external_scheme;
+  proxy_set_header X-Forwarded-Host $host;
+  proxy_set_header Forwarded "";
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
  }
  location = /healthz { access_log off; default_type text/plain; return 200 'ok'; }
