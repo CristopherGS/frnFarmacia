@@ -52,7 +52,34 @@ export class App implements OnDestroy {
     ['↗', 'Ventas'],
     ['≡', 'Auditoría'],
   ];
-  total = computed(() => this.cart().reduce((s, l) => s + l['price'] * l['quantity'], 0));
+  total = computed(() =>
+    this.cents(this.cart().reduce((s, l) => s + l['price'] * l['quantity'], 0)),
+  );
+  // El punto de venta muestra como máximo estas tarjetas; con catálogos grandes se refina buscando.
+  readonly posLimit = 60;
+  private stockByProduct = computed(
+    () => new Map(this.rows('products').map((p) => [p['id'], Number(p['stock']) || 0])),
+  );
+  private cartBase = computed(() => {
+    const used = new Map<number, number>();
+    for (const l of this.cart())
+      used.set(l['product_id'], (used.get(l['product_id']) || 0) + l['quantity'] * l['factor']);
+    return used;
+  });
+  posMatches = computed(() => {
+    const term = this.search().trim().toLowerCase();
+    return this.rows('presentations').filter(
+      (p) =>
+        p['sale_enabled'] !== false &&
+        (!term ||
+          [p['product_name'], p['generic_name'], p['name'], p['sku'], p['barcode']]
+            .join(' ')
+            .toLowerCase()
+            .includes(term)),
+    );
+  });
+  posResults = computed(() => this.posMatches().slice(0, this.posLimit));
+  needsRx = computed(() => this.cart().some((l) => l['requires_rx']));
   today = new Intl.DateTimeFormat('es-GT', {
     dateStyle: 'full',
     timeZone: 'America/Guatemala',
@@ -230,14 +257,38 @@ export class App implements OnDestroy {
       this.pendingScan = null;
     });
   }
-  async refresh() {
-    this.automaticCash.set((await this.request('/cash/schedule')).automatic);
+  // Sin `only` recarga todo; con `only` recarga solo esas colecciones (las permitidas al rol).
+  async refresh(only?: string[]) {
+    if (!only) this.automaticCash.set((await this.request('/cash/schedule')).automatic);
     const names = ['products', 'presentations', 'suppliers', 'inventory'];
     if (this.canReceive() || this.has(['ACCOUNTANT'])) names.push('receipts', 'movements');
     if (this.canSell() || this.has(['ACCOUNTANT'])) names.push('sales', 'cash');
     if (this.has(['ADMIN', 'SUPERVISOR', 'ACCOUNTANT'])) names.push('audit');
-    const results = await Promise.all(names.map((n) => this.request('/' + n)));
-    this.data.set(Object.fromEntries(names.map((n, i) => [n, results[i]])));
+    const load = only ? names.filter((n) => only.includes(n)) : names;
+    const results = await Promise.all(load.map((n) => this.request('/' + n)));
+    const fresh = Object.fromEntries(load.map((n, i) => [n, results[i]]));
+    this.data.update((d) => (only ? { ...d, ...fresh } : fresh));
+    this.syncCart();
+  }
+  // Ajusta el carrito a los precios vigentes y retira presentaciones que ya no se venden.
+  private syncCart() {
+    const current = new Map(this.rows('presentations').map((p) => [p['id'], p]));
+    let changed = false;
+    const lines = this.cart().flatMap((l) => {
+      const p = current.get(l['id']);
+      if (!p || p['sale_enabled'] === false || p['controlled']) {
+        changed = true;
+        return [];
+      }
+      if (Number(p['price']) === Number(l['price'])) return [l];
+      changed = true;
+      return [{ ...l, price: p['price'] }];
+    });
+    if (!changed) return;
+    this.cart.set(lines);
+    this.key = '';
+    this.tendered = this.total();
+    this.message.set('El carrito se actualizó con los precios y productos vigentes. Revísalo.');
   }
   async reload() {
     await this.run(async () => this.refresh());
@@ -263,10 +314,25 @@ export class App implements OnDestroy {
         )
       : '—';
   }
+  cents(v: number) {
+    return Math.round(v * 100) / 100;
+  }
   stock(id: number) {
-    return this.rows('products').find((p) => p['id'] === id)?.['stock'] || 0;
+    return this.stockByProduct().get(id) || 0;
+  }
+  // Unidades adicionales de esta presentación que caben en la existencia vendible del producto.
+  remaining(p: Row) {
+    const stock = this.stockByProduct().get(p['product_id']);
+    if (stock === undefined) return Infinity; // sin dato de existencia: decide el servidor
+    return Math.floor((stock - (this.cartBase().get(p['product_id']) || 0)) / p['factor']);
   }
   add(p: Row) {
+    if (this.remaining(p) < 1) {
+      this.error.set(
+        'Sin existencias suficientes de ' + p['product_name'] + ' · ' + p['name'] + '.',
+      );
+      return false;
+    }
     this.key = '';
     this.cart.update((c) =>
       c.some((l) => l['id'] === p['id'])
@@ -274,8 +340,16 @@ export class App implements OnDestroy {
         : [...c, { ...p, quantity: 1 }],
     );
     this.tendered = this.total();
+    return true;
   }
   quantity(id: number, delta: number) {
+    const line = this.cart().find((l) => l['id'] === id);
+    if (line && delta > 0 && this.remaining(line) < delta) {
+      this.error.set(
+        'No hay más existencias de ' + line['product_name'] + ' · ' + line['name'] + '.',
+      );
+      return;
+    }
     this.key = '';
     this.cart.update((c) =>
       c
@@ -283,6 +357,74 @@ export class App implements OnDestroy {
         .filter((l) => l['quantity'] > 0),
     );
     this.tendered = this.total();
+  }
+  remove(id: number) {
+    this.key = '';
+    this.cart.update((c) => c.filter((l) => l['id'] !== id));
+    this.tendered = this.total();
+  }
+  clearCart() {
+    this.key = '';
+    this.cart.set([]);
+    this.tendered = 0;
+    this.prescription = false;
+  }
+  setPayment(method: string) {
+    this.payment = method;
+    this.tendered = this.total();
+  }
+  // Efectivo: importe exacto y los siguientes billetes redondos que el cliente suele entregar.
+  cashOptions() {
+    const t = this.total();
+    if (!t) return [];
+    return [...new Set([t, ...[10, 50, 100, 200].map((b) => Math.ceil(t / b) * b)])]
+      .sort((a, b) => a - b)
+      .slice(0, 4);
+  }
+  missing() {
+    return this.payment === 'CASH'
+      ? Math.max(0, this.cents(this.total() - (this.tendered || 0)))
+      : 0;
+  }
+  change() {
+    return this.payment === 'CASH'
+      ? Math.max(0, this.cents((this.tendered || 0) - this.total()))
+      : 0;
+  }
+  canCheckout() {
+    return (
+      !this.busy() &&
+      this.cart().length > 0 &&
+      !!this.activeCash() &&
+      (!this.needsRx() || this.prescription) &&
+      this.missing() === 0
+    );
+  }
+  // Enter en el buscador: un lector USB escribe el código y pulsa Enter.
+  searchEnter() {
+    const term = this.search().trim();
+    if (!term || !this.canSell()) return;
+    const matches = this.posMatches();
+    if (this.rows('presentations').some((p) => p['barcode'] === term) || /^\d{8,14}$/.test(term)) {
+      this.search.set('');
+      this.applyCode('sale', term);
+    } else if (matches.length === 1) {
+      this.search.set('');
+      this.sell(matches[0]);
+    }
+  }
+  private sell(presentation: Row) {
+    if (presentation['controlled']) {
+      this.error.set('La venta de productos controlados no está habilitada.');
+      return;
+    }
+    if (presentation['sale_enabled'] === false) {
+      this.error.set('Esta presentación no está habilitada para venta.');
+      return;
+    }
+    this.error.set('');
+    if (this.add(presentation))
+      this.message.set('Agregado: ' + presentation['product_name'] + ' · ' + presentation['name']);
   }
   async saveProduct() {
     await this.run(async () => {
@@ -330,25 +472,34 @@ export class App implements OnDestroy {
   async checkout() {
     await this.run(async () => {
       if (!this.key) this.key = crypto.randomUUID();
-      const r = await this.request(
-        '/sales/checkout',
-        {
-          lines: this.cart().map((l) => ({
-            presentationId: l['id'],
-            quantity: l['quantity'],
-            expectedPrice: l['price'],
-          })),
-          method: this.payment,
-          tendered: this.tendered,
-          prescriptionChecked: this.prescription,
-        },
-        { 'Idempotency-Key': this.key },
-      );
+      let r;
+      try {
+        r = await this.request(
+          '/sales/checkout',
+          {
+            lines: this.cart().map((l) => ({
+              presentationId: l['id'],
+              quantity: l['quantity'],
+              expectedPrice: l['price'],
+            })),
+            method: this.payment,
+            tendered: this.payment === 'CASH' ? this.tendered : this.total(),
+            prescriptionChecked: this.prescription,
+          },
+          { 'Idempotency-Key': this.key },
+        );
+      } catch (e) {
+        // 409: cambió un precio o la existencia; se recargan para corregir el carrito.
+        if ((e as { status?: number }).status === 409)
+          await this.refresh(['products', 'presentations', 'inventory']).catch(() => {});
+        throw e;
+      }
       this.ticket.set(await this.request('/sales/' + r.id));
       this.cart.set([]);
       this.key = '';
       this.prescription = false;
-      await this.refresh();
+      this.tendered = 0;
+      await this.refresh(['products', 'inventory', 'movements', 'sales', 'cash', 'audit']);
       this.message.set('Venta #' + r.id + ' registrada. Cambio: ' + this.money(r.change_amount));
     });
   }
@@ -387,7 +538,10 @@ export class App implements OnDestroy {
   handleBarcode(code: string) {
     const target = this.scanTarget();
     this.scanTarget.set(null);
-    if (!target) return;
+    if (target) this.applyCode(target, code);
+  }
+
+  private applyCode(target: 'sale' | 'inventory' | 'receipt' | 'product', code: string) {
     const presentation = this.rows('presentations').find((p) => p['barcode'] === code);
     if (target === 'product') {
       if (presentation) {
@@ -406,21 +560,8 @@ export class App implements OnDestroy {
     }
     if (presentation) {
       this.pendingScan = null;
-      if (target === 'sale') {
-        if (presentation['controlled']) {
-          this.error.set('La venta de productos controlados no está habilitada.');
-          return;
-        }
-        if (presentation['sale_enabled'] === false) {
-          this.error.set('Esta presentación no está habilitada para venta.');
-          return;
-        }
-        this.add(presentation);
-        this.message.set(
-          'Agregado: ' + presentation['product_name'] + ' · ' + presentation['name'],
-        );
-      } else
-        this.selectReceiptPresentation(presentation, target === 'receipt' ? this.scanIndex : 0);
+      if (target === 'sale') this.sell(presentation);
+      else this.selectReceiptPresentation(presentation, target === 'receipt' ? this.scanIndex : 0);
       return;
     }
     this.pendingScan = { target, index: this.scanIndex, code };

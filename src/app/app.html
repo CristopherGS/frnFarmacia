@@ -404,34 +404,66 @@
             <div class="toolbar">
               <input
                 class="search"
-                placeholder="⌕ Nombre, SKU o código de barras…"
+                placeholder="⌕ Nombre, genérico, SKU o código (Enter agrega)…"
+                aria-label="Buscar producto o escribir código de barras y pulsar Enter"
                 [ngModel]="search()"
                 (ngModelChange)="search.set($event)"
+                (keydown.enter)="searchEnter()"
               />
               <button class="primary scan-button" type="button" (click)="openScanner('sale')">
                 ▣ Escanear código
               </button>
             </div>
             <div class="pos-products">
-              @for (p of filtered('presentations'); track p['id']) {
-                <button class="card pos-product" (click)="add(p)" [disabled]="p['controlled']">
+              @for (p of posResults(); track p['id']) {
+                <button
+                  class="card pos-product"
+                  (click)="add(p)"
+                  [disabled]="p['controlled'] || remaining(p) < 1"
+                >
                   <span class="product-icon">✚</span><b>{{ p['product_name'] }}</b
                   ><small>{{ p['name'] }} · {{ p['factor'] }} unidades base</small>
                   <div>
                     <strong>{{ money(p['price']) }}</strong
                     ><span>＋</span>
                   </div>
-                  <small>{{ stock(p['product_id']) }} unidades disponibles</small>
+                  <small>{{
+                    p['controlled']
+                      ? 'Controlado · venta no habilitada'
+                      : remaining(p) < 1
+                        ? 'Sin existencias disponibles'
+                        : stock(p['product_id']) + ' unidades disponibles'
+                  }}</small>
+                  @if (p['requires_rx']) {
+                    <small class="pill warning">Requiere receta</small>
+                  }
                 </button>
               } @empty {
-                <div class="empty">Sin resultados. Crea productos en Catálogo.</div>
+                <div class="empty">
+                  {{
+                    search()
+                      ? 'Sin resultados para «' + search() + '».'
+                      : 'Sin resultados. Crea productos en Catálogo.'
+                  }}
+                </div>
               }
             </div>
+            @if (posMatches().length > posLimit) {
+              <p class="muted">
+                Mostrando {{ posLimit }} de {{ posMatches().length }} presentaciones. Escribe para
+                refinar la búsqueda.
+              </p>
+            }
           </section>
           <section class="card cart">
             <div class="card-heading">
               <h3>Venta actual</h3>
-              <span class="pill">{{ cart().length }} artículos</span>
+              <span class="pill"
+                >{{ cart().length }} {{ cart().length === 1 ? 'artículo' : 'artículos' }}</span
+              >
+              @if (cart().length) {
+                <button class="text-button" type="button" (click)="clearCart()">Vaciar</button>
+              }
             </div>
             @if (!activeCash()) {
               <div class="alert error">
@@ -444,13 +476,33 @@
             }
             @for (l of cart(); track l['id']) {
               <div class="cart-line">
-                <b>{{ l['product_name'] }}</b
-                ><small>{{ l['name'] }} · {{ money(l['price']) }}</small>
+                <button
+                  class="icon-button remove-line"
+                  type="button"
+                  [attr.aria-label]="'Quitar ' + l['product_name']"
+                  (click)="remove(l['id'])"
+                >
+                  ✕</button
+                ><b>{{ l['product_name'] }}</b
+                ><small
+                  >{{ l['name'] }} · {{ money(l['price']) }}
+                  @if (l['requires_rx']) {
+                    · <span class="rx">Requiere receta</span>
+                  }
+                </small>
                 <div>
                   <div class="quantity">
-                    <button (click)="quantity(l['id'], -1)">−</button
+                    <button type="button" aria-label="Quitar una" (click)="quantity(l['id'], -1)">
+                      −</button
                     ><span>{{ l['quantity'] }}</span
-                    ><button (click)="quantity(l['id'], 1)">＋</button>
+                    ><button
+                      type="button"
+                      aria-label="Agregar una"
+                      [disabled]="remaining(l) < 1"
+                      (click)="quantity(l['id'], 1)"
+                    >
+                      ＋
+                    </button>
                   </div>
                   <strong>{{ money(l['price'] * l['quantity']) }}</strong>
                 </div>
@@ -463,25 +515,43 @@
                 <span>Total</span><b>{{ money(total()) }}</b>
               </div>
               <label
-                >Método de pago<select [(ngModel)]="payment">
+                >Método de pago<select [ngModel]="payment" (ngModelChange)="setPayment($event)">
                   <option value="CASH">Efectivo</option>
                   <option value="CARD">Tarjeta (registro)</option>
                   <option value="TRANSFER">Transferencia</option>
                 </select></label
-              ><label
-                >Importe recibido<input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  [(ngModel)]="tendered" /></label
-              ><label class="check"
-                ><input type="checkbox" [(ngModel)]="prescription" /> Receta revisada cuando
-                corresponde</label
-              ><button
-                class="primary full"
-                [disabled]="busy() || !cart().length || !activeCash()"
-                (click)="checkout()"
               >
+              @if (payment === 'CASH') {
+                <label
+                  >Importe recibido<input type="number" min="0" step="0.01" [(ngModel)]="tendered"
+                /></label>
+                @if (cashOptions().length) {
+                  <div class="cash-options">
+                    @for (v of cashOptions(); track v) {
+                      <button
+                        type="button"
+                        [class.selected]="tendered === v"
+                        (click)="tendered = v"
+                      >
+                        {{ v === total() ? 'Exacto' : money(v) }}
+                      </button>
+                    }
+                  </div>
+                }
+                <div class="change" [class.short]="missing() > 0">
+                  <span>{{ missing() > 0 ? 'Falta' : 'Cambio' }}</span
+                  ><b>{{ money(missing() > 0 ? missing() : change()) }}</b>
+                </div>
+              } @else if (cart().length) {
+                <p class="muted">Se registra el importe exacto: {{ money(total()) }}.</p>
+              }
+              @if (needsRx()) {
+                <label class="check"
+                  ><input type="checkbox" [(ngModel)]="prescription" /> Receta revisada (obligatorio
+                  para esta venta)</label
+                >
+              }
+              <button class="primary full" [disabled]="!canCheckout()" (click)="checkout()">
                 {{ busy() ? 'Confirmando…' : 'Confirmar cobro →' }}</button
               ><small class="muted">Comprobante de control interno</small>
             </div>
