@@ -13,3 +13,11 @@ jobs:
       - run: npm test -- --watch=false
       - run: npm run build
       - run: docker build -t farmacia-web:check .
+      - name: Verify production image
+        shell: bash
+        run: |
+          docker run -d --name farmacia-web-check -p 127.0.0.1:18080:80 farmacia-web:check
+          trap 'docker logs farmacia-web-check; docker rm -f farmacia-web-check' EXIT
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/healthz
+          curl --fail http://127.0.0.1:18080/ | grep '<app-root>'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/nonexistent.js)" = 404

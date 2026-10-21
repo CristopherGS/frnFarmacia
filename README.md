@@ -6,7 +6,9 @@ Angular 21, interfaz responsive en español y moneda GTQ. Repositorio Git y Dock
 
 Para iniciar el sistema completo nativo en Windows, usar `INICIAR-LOCAL.cmd` desde la carpeta contenedora. Abre http://127.0.0.1:4200; acceso en `farmacia-infra/.local/ACCESO.txt`. No requiere Docker. Ver `farmacia-infra/LOCAL.md`.
 
-`npm ci` y `npm start`. Abrir http://localhost:4200; la API debe estar en http://localhost:8080. El proxy de desarrollo mantiene la sesión y protección CSRF en el mismo origen.
+`npm ci` y `npm run dev`. Abrir http://localhost:4200; la API debe estar en http://localhost:8080. El proxy de desarrollo mantiene la sesión y protección CSRF en el mismo origen.
+
+Producción usa exclusivamente la imagen Nginx del Dockerfile, puerto 80. `npm start` muestra instrucciones y termina con error deliberadamente para impedir desplegar el servidor de desarrollo por accidente. Los iniciadores locales de Windows siguen usando Angular CLI directamente.
 
 `npm run build` genera `dist/farmacia-web/browser`. El contenedor Nginx usa `API_UPSTREAM` para reenviar `/api/` al backend privado. En Coolify publicar con HTTPS y configurar API con `COOKIE_SECURE=true`.
 
