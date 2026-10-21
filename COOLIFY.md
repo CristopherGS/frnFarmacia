@@ -15,20 +15,37 @@ Los registros recibidos muestran compilación Angular terminada, pero construcci
 | Dockerfile location | `/Dockerfile` |
 | Puerto interno / Ports Exposes | `80` |
 | Dirección de escucha dentro del contenedor | `0.0.0.0:80` |
-| Dominio | `https://med.sglabs.lat` |
-| Comando de inicio personalizado | Vacío (usar el de la imagen Nginx) |
-| Healthcheck | HTTP, puerto 80, ruta `/healthz`, estado 200 |
-| Variable de ejecución | `API_UPSTREAM=http://<nombre-interno-real-del-backend>:8080` |
+| Dominio | `http://med.sglabs.lat` (con `http://`: Cloudflare pone el TLS) |
+| Comando de inicio, build e install personalizados | Vacíos (usar el de la imagen Nginx) |
+| Healthcheck | HTTP GET, puerto 80, ruta `/healthz`, estado 200 |
+| Variable de ejecución (solo **Runtime**, no Build) | `API_UPSTREAM=http://bkn-api:8080` |
 
-El nombre entre `<...>` es un marcador: reemplazarlo por el nombre o alias real del backend en la red privada de Coolify. Ambas aplicaciones deben compartir esa red. No usar `localhost`, que dentro del frontend apunta al propio frontend. No usar el nombre de ejemplo `api` salvo que se haya configurado ese alias realmente.
+`bkn-api` es el *Custom network alias* configurado en la aplicación backend (`bknFarmacia`) en Coolify. Ambas aplicaciones deben compartir la red privada de Coolify; si se cambia el alias del backend, hay que actualizar esta variable. No usar `localhost`, que dentro del frontend apunta al propio frontend.
 
-También se admite un upstream HTTPS, por ejemplo `https://bknmed.sglabs.lat`, pero si Cloudflare protege esa ruta con un desafío interactivo el proxy no podrá autenticar usuarios. Se recomienda conexión privada entre frontend y backend; el navegador llama `/api/v1` en el mismo dominio del frontend.
+También se admite un upstream HTTPS, por ejemplo `https://bknmed.sglabs.lat`, pero si Cloudflare protege esa ruta con un desafío interactivo el proxy no podrá autenticar usuarios. Se usa conexión privada entre frontend y backend; el navegador llama `/api/v1` en el mismo dominio del frontend.
 
 Guardar y volver a desplegar. En el nuevo registro deben aparecer las etapas del Dockerfile (Node 24 y después Nginx), no el plan Railpack ni `ng serve`. Los archivos estáticos están en `/app/dist/farmacia-web/browser` y el Dockerfile ya los copia a Nginx.
 
-Si antes se configuraron los puertos 3000 o 4200, reemplazarlos por 80 para este frontend de producción. El backend sigue en 8080. El dominio HTTPS llega al proxy de Coolify por 443 y el proxy reenvía al puerto HTTP interno 80; no configurar 443 como puerto del proceso Nginx.
+Si antes se configuraron los puertos 3000 o 4200, reemplazarlos por 80 para este frontend de producción. El backend sigue en 8080. Cloudflare termina el TLS y el Tunnel entrega HTTP a Traefik por el puerto 80, que reenvía al puerto interno 80 de este contenedor; no configurar 443 como puerto del proceso Nginx.
 
 La imagen incorpora healthcheck `/healthz`. Esta comprobación confirma el servidor web; no garantiza que PostgreSQL o la API estén disponibles. El control de la API se hace aparte con `/actuator/health` en backend.
+
+## Infraestructura SG Labs
+
+- Servidor: CT104 `sglabs-coolify`, IP interna `192.168.0.33` (panel de Coolify normalmente en `:8000`).
+- Ruta de tráfico: Cloudflare Tunnel (CT102, `*.sglabs.lat` → `http://192.168.0.33:80`) → Traefik (`coolify-proxy`) → contenedor. Por eso los dominios en Coolify llevan `http://`.
+- Recursos de CT104: 4 cores, 6 GB de RAM y 2 GB de swap. Con 2 cores / 4 GB las compilaciones de Angular y Maven eran muy lentas.
+- Backend: [bknFarmacia](https://github.com/CristopherGS/bknFarmacia/blob/main/COOLIFY.md), `http://bknmed.sglabs.lat`, alias de red `bkn-api`, puerto 8080.
+
+Comprobación directa contra el origen (salta Cloudflare):
+
+```sh
+curl -i -H 'Host: med.sglabs.lat'    http://192.168.0.33/healthz
+curl -i -H 'Host: bknmed.sglabs.lat' http://192.168.0.33/actuator/health
+curl -i -H 'Host: med.sglabs.lat'    http://192.168.0.33/api/v1/auth/csrf   # JSON, no HTML
+```
+
+Si por HTTPS público aparece `403` con "Just a moment...", es una regla de Cloudflare (Security Events), no del servidor.
 
 ## Comprobación
 
