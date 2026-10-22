@@ -2,7 +2,7 @@
 
 Diagnóstico conjunto, pruebas realizadas y comandos para el servidor: [DIAGNOSTICO_DESPLIEGUE.md](DIAGNOSTICO_DESPLIEGUE.md).
 
-Los registros recibidos muestran compilación Angular terminada, pero construcción mediante **Railpack** con Node 22 y arranque `npm run start`. Los comandos npm start y npm run dev son exclusivamente de desarrollo; producción debe usar el Dockerfile con Nginx. La versión de desarrollo escucha explícitamente en 0.0.0.0:4200.
+Los registros recibidos muestran compilación Angular terminada, pero construcción mediante **Railpack** con Node 22 y arranque `npm run start`. `npm run dev` es exclusivamente de desarrollo. `npm start` ahora sirve el build de producción con `scripts/serve.mjs` (estáticos, `/healthz` y proxy `/api/` hacia `API_UPSTREAM`, puerto `PORT` o 4200), de modo que Railpack también funciona; aun así, producción debe usar el Dockerfile con Nginx.
 
 ## Configuración de esta aplicación
 
@@ -25,6 +25,8 @@ Los registros recibidos muestran compilación Angular terminada, pero construcci
 También se admite un upstream HTTPS, por ejemplo `https://bknmed.sglabs.lat`, pero si Cloudflare protege esa ruta con un desafío interactivo el proxy no podrá autenticar usuarios. Se usa conexión privada entre frontend y backend; el navegador llama `/api/v1` en el mismo dominio del frontend.
 
 Guardar y volver a desplegar. En el nuevo registro deben aparecer las etapas del Dockerfile (Node 24 y después Nginx), no el plan Railpack ni `ng serve`. Los archivos estáticos están en `/app/dist/farmacia-web/browser` y el Dockerfile ya los copia a Nginx.
+
+Tiempo de build: el Dockerfile copia solo `package*.json` antes de `npm ci` y solo `angular.json`, `tsconfig*.json`, `public` y `src` antes de `ng build`, así que un cambio en documentación o en `.github` reutiliza todas las capas. La caché de npm usa BuildKit (`--mount=type=cache`). No activar *Disable build cache* en Coolify.
 
 Si antes se configuraron los puertos 3000 o 4200, reemplazarlos por 80 para este frontend de producción. El backend sigue en 8080. Cloudflare termina el TLS y el Tunnel entrega HTTP a Traefik por el puerto 80, que reenvía al puerto interno 80 de este contenedor; no configurar 443 como puerto del proceso Nginx.
 
