@@ -42,7 +42,11 @@ describe('Punto de venta', () => {
     vi.spyOn(App.prototype, 'restore').mockResolvedValue(undefined);
     fixture = TestBed.createComponent(App);
     app = fixture.componentInstance;
-    app.user.set({ username: 'caja', role: 'CASHIER' });
+    app.user.set({
+      username: 'caja',
+      role: 'CASHIER',
+      permissions: ['POS_SELL', 'SALES_VIEW', 'CASH_VIEW', 'CASH_MANAGE', 'CATALOG_VIEW'],
+    });
     app.data.set({
       presentations: [caja, tableta, jarabe],
       products: [

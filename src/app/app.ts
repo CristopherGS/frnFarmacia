@@ -19,6 +19,7 @@ export class App implements OnDestroy {
     code: string;
   } | null = null;
   private cashTimer: ReturnType<typeof setInterval>;
+  private accessTimer: ReturnType<typeof setInterval>;
   user = signal<Row | null>(null);
   busy = signal(false);
   error = signal('');
@@ -51,7 +52,45 @@ export class App implements OnDestroy {
     ['▣', 'Caja'],
     ['↗', 'Ventas'],
     ['≡', 'Auditoría'],
+    ['☺', 'Usuarios'],
   ];
+  // Permisos que dan acceso a cada página; Resumen es para todos y Usuarios solo para el administrador.
+  private navNeeds: Record<string, string[]> = {
+    'Punto de venta': ['POS_SELL'],
+    Catálogo: ['CATALOG_VIEW', 'CATALOG_MANAGE'],
+    Inventario: ['INVENTORY_VIEW'],
+    Compras: ['PURCHASES_VIEW', 'PURCHASES_RECEIVE'],
+    Proveedores: ['SUPPLIERS_VIEW', 'SUPPLIERS_MANAGE'],
+    Caja: ['CASH_VIEW', 'CASH_MANAGE'],
+    Ventas: ['SALES_VIEW'],
+    Auditoría: ['AUDIT_VIEW'],
+  };
+  roleNames: Record<string, string> = {
+    ADMIN: 'Administrador',
+    SUPERVISOR: 'Supervisor',
+    CASHIER: 'Cajero',
+    INVENTORY: 'Inventario',
+    ACCOUNTANT: 'Contador',
+  };
+  roleKeys = Object.keys(this.roleNames);
+  perms = computed(() => new Set<string>(this.user()?.['permissions'] ?? []));
+  isAdmin = computed(() => this.user()?.['role'] === 'ADMIN');
+  users = signal<Row[]>([]);
+  access = signal<{
+    permissions: { key: string; group: string; label: string }[];
+    roles: Record<string, string[]>;
+    implies: Record<string, string[]>;
+  } | null>(null);
+  permissionGroups = computed(() => {
+    const groups = new Map<string, { key: string; label: string }[]>();
+    for (const p of this.access()?.permissions ?? [])
+      groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
+    return [...groups].map(([name, items]) => ({ name, items }));
+  });
+  editingUser = signal<Row | null>(null);
+  userForm = this.emptyUserForm();
+  newPassword = '';
+  ownPassword = '';
   total = computed(() =>
     this.cents(this.cart().reduce((s, l) => s + l['price'] * l['quantity'], 0)),
   );
@@ -98,6 +137,8 @@ export class App implements OnDestroy {
           .catch(() => {});
       }
     }, 15000);
+    // Si el administrador cambia permisos o desactiva la cuenta, la pantalla lo refleja sin recargar.
+    this.accessTimer = setInterval(() => void this.syncAccess(), 30000);
   }
   rows(name: string) {
     return this.data()[name] || [];
@@ -132,29 +173,27 @@ export class App implements OnDestroy {
   activeCash() {
     return this.rows('cash').find((c) => !c['closed_at']);
   }
-  has(roles: string[]) {
-    return roles.includes(this.user()?.['role']);
+  can(...keys: string[]) {
+    return this.isAdmin() || keys.some((k) => this.perms().has(k));
   }
   canWrite() {
-    return this.has(['ADMIN', 'SUPERVISOR']);
+    return this.can('CATALOG_MANAGE');
   }
   canReceive() {
-    return this.has(['ADMIN', 'SUPERVISOR', 'INVENTORY']);
+    return this.can('PURCHASES_RECEIVE');
   }
   canSell() {
-    return this.has(['ADMIN', 'SUPERVISOR', 'CASHIER']);
+    return this.can('POS_SELL');
   }
   visibleNav() {
-    return this.nav.filter(
-      (n) =>
-        !(n[1] === 'Auditoría' && !this.has(['ADMIN', 'SUPERVISOR', 'ACCOUNTANT'])) &&
-        !(['Punto de venta', 'Caja'].includes(n[1]) && !this.canSell()) &&
-        !(
-          ['Compras', 'Proveedores'].includes(n[1]) &&
-          !this.canReceive() &&
-          !this.has(['ACCOUNTANT'])
-        ),
+    return this.nav.filter((n) =>
+      n[1] === 'Usuarios'
+        ? this.isAdmin()
+        : !this.navNeeds[n[1]] || this.can(...this.navNeeds[n[1]]),
     );
+  }
+  loaded(name: string) {
+    return name in this.data();
   }
   emptyProduct() {
     return {
@@ -173,9 +212,14 @@ export class App implements OnDestroy {
   emptyLine() {
     return { presentationId: 0, quantity: 1, lot: '', expiresOn: '', totalCost: 0 };
   }
-  async request(path: string, body?: unknown, extra: Record<string, string> = {}) {
+  async request(
+    path: string,
+    body?: unknown,
+    extra: Record<string, string> = {},
+    method = body === undefined ? 'GET' : 'POST',
+  ) {
     const r = await fetch('/api/v1' + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method,
       credentials: 'same-origin',
       headers: {
         ...(body === undefined
@@ -194,7 +238,9 @@ export class App implements OnDestroy {
       }
       let message = [502, 503, 504].includes(r.status)
         ? 'El servicio de la farmacia no está disponible. Intenta de nuevo en unos momentos.'
-        : 'No se pudo completar la operación (' + r.status + ').';
+        : r.status === 403
+          ? 'No tienes permiso para esta acción. Pide acceso al administrador.'
+          : 'No se pudo completar la operación (' + r.status + ').';
       try {
         message = (await r.json()).message || message;
       } catch {}
@@ -260,10 +306,18 @@ export class App implements OnDestroy {
   // Sin `only` recarga todo; con `only` recarga solo esas colecciones (las permitidas al rol).
   async refresh(only?: string[]) {
     if (!only) this.automaticCash.set((await this.request('/cash/schedule')).automatic);
-    const names = ['products', 'presentations', 'suppliers', 'inventory'];
-    if (this.canReceive() || this.has(['ACCOUNTANT'])) names.push('receipts', 'movements');
-    if (this.canSell() || this.has(['ACCOUNTANT'])) names.push('sales', 'cash');
-    if (this.has(['ADMIN', 'SUPERVISOR', 'ACCOUNTANT'])) names.push('audit');
+    // Solo se piden las colecciones que el administrador permitió; el servidor lo exige también.
+    const names: string[] = [];
+    if (
+      this.can('CATALOG_VIEW', 'CATALOG_MANAGE', 'POS_SELL', 'INVENTORY_VIEW', 'PURCHASES_RECEIVE')
+    )
+      names.push('products', 'presentations');
+    if (this.can('SUPPLIERS_VIEW', 'PURCHASES_RECEIVE')) names.push('suppliers');
+    if (this.can('INVENTORY_VIEW')) names.push('inventory', 'movements');
+    if (this.can('PURCHASES_VIEW')) names.push('receipts');
+    if (this.can('SALES_VIEW')) names.push('sales');
+    if (this.can('CASH_VIEW', 'CASH_MANAGE', 'POS_SELL')) names.push('cash');
+    if (this.can('AUDIT_VIEW')) names.push('audit');
     const load = only ? names.filter((n) => only.includes(n)) : names;
     const results = await Promise.all(load.map((n) => this.request('/' + n)));
     const fresh = Object.fromEntries(load.map((n, i) => [n, results[i]]));
@@ -294,10 +348,12 @@ export class App implements OnDestroy {
     await this.run(async () => this.refresh());
   }
   go(p: string) {
+    if (!this.visibleNav().some((n) => n[1] === p)) return;
     this.page.set(p);
     this.search.set('');
     this.error.set('');
     this.message.set('');
+    if (p === 'Usuarios') void this.run(() => this.loadUsers());
   }
   money(v: unknown) {
     return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(
@@ -425,6 +481,123 @@ export class App implements OnDestroy {
     this.error.set('');
     if (this.add(presentation))
       this.message.set('Agregado: ' + presentation['product_name'] + ' · ' + presentation['name']);
+  }
+  emptyUserForm() {
+    return {
+      username: '',
+      password: '',
+      role: 'CASHIER',
+      permissions: [] as string[],
+      active: true,
+    };
+  }
+  async loadUsers() {
+    const [users, access] = await Promise.all([
+      this.request('/users'),
+      this.access() ?? this.request('/users/permissions'),
+    ]);
+    this.users.set(users);
+    this.access.set(access);
+  }
+  // Rol = plantilla inicial; el administrador puede ajustar cada permiso después.
+  openUser(u?: Row) {
+    this.error.set('');
+    this.message.set('');
+    this.newPassword = '';
+    this.editingUser.set(u ?? null);
+    this.userForm = u
+      ? {
+          username: u['username'],
+          password: '',
+          role: u['role'],
+          permissions: [...u['permissions']],
+          active: u['active'],
+        }
+      : { ...this.emptyUserForm(), permissions: [...(this.access()?.roles['CASHIER'] ?? [])] };
+    this.modal.set('user');
+  }
+  editingSelf() {
+    return this.editingUser()?.['username'] === this.user()?.['username'];
+  }
+  applyRole(role: string) {
+    this.userForm.role = role;
+    this.userForm.permissions = [...(this.access()?.roles[role] ?? [])];
+  }
+  granted(key: string) {
+    return this.userForm.role === 'ADMIN' || this.userForm.permissions.includes(key);
+  }
+  // Dar un permiso da también los que necesita; quitarlo quita los que dependen de él.
+  togglePermission(key: string, on: boolean) {
+    const implies = this.access()?.implies ?? {};
+    const set = new Set(this.userForm.permissions);
+    if (on) {
+      set.add(key);
+      (implies[key] ?? []).forEach((k) => set.add(k));
+    } else {
+      set.delete(key);
+      for (const [k, needs] of Object.entries(implies)) if (needs.includes(key)) set.delete(k);
+    }
+    this.userForm.permissions = [...set];
+  }
+  permissionSummary(u: Row) {
+    return u['role'] === 'ADMIN'
+      ? 'Acceso total'
+      : u['permissions'].length + ' de ' + (this.access()?.permissions.length ?? '—') + ' permisos';
+  }
+  async saveUser() {
+    await this.run(async () => {
+      const editing = this.editingUser();
+      const f = this.userForm;
+      if (editing)
+        await this.request(
+          '/users/' + editing['id'],
+          { role: f.role, permissions: f.permissions, active: f.active },
+          {},
+          'PUT',
+        );
+      else
+        await this.request('/users', {
+          username: f.username,
+          password: f.password,
+          role: f.role,
+          permissions: f.permissions,
+        });
+      this.modal.set('');
+      await this.loadUsers();
+      this.message.set(editing ? 'Cambios guardados. Aplican de inmediato.' : 'Usuario creado.');
+    });
+  }
+  async resetUserPassword() {
+    await this.run(async () => {
+      await this.request('/users/' + this.editingUser()!['id'] + '/password', {
+        password: this.newPassword,
+      });
+      this.newPassword = '';
+      this.message.set('Contraseña restablecida.');
+    });
+  }
+  async changeOwnPassword() {
+    await this.run(async () => {
+      await this.request('/users/password', { password: this.ownPassword });
+      this.ownPassword = '';
+      this.modal.set('');
+      this.message.set('Tu contraseña se actualizó.');
+    });
+  }
+  // Recoge cambios de permisos o de estado hechos por el administrador mientras hay sesión abierta.
+  async syncAccess() {
+    if (!this.user() || this.busy()) return;
+    try {
+      const me = await this.request('/auth/me');
+      if (
+        JSON.stringify([me['role'], me['permissions']]) ===
+        JSON.stringify([this.user()!['role'], this.user()!['permissions']])
+      )
+        return;
+      this.user.set(me);
+      if (!this.visibleNav().some((n) => n[1] === this.page())) this.page.set('Resumen');
+      await this.refresh();
+    } catch {}
   }
   async saveProduct() {
     await this.run(async () => {
@@ -599,5 +772,6 @@ export class App implements OnDestroy {
   }
   ngOnDestroy() {
     clearInterval(this.cashTimer);
+    clearInterval(this.accessTimer);
   }
 }

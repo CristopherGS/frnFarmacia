@@ -68,8 +68,9 @@
       <div class="profile">
         <div class="avatar">{{ user()!['username'].slice(0, 2).toUpperCase() }}</div>
         <div>
-          {{ user()!['username'] }}<small>{{ user()!['role'] }}</small>
+          {{ user()!['username'] }}<small>{{ roleNames[user()!['role']] }}</small>
         </div>
+        <button (click)="modal.set('password')" aria-label="Cambiar mi contraseña">⚿</button>
         <button (click)="logout()" aria-label="Cerrar sesión">↪</button>
       </div>
     </div>
@@ -111,6 +112,9 @@
         @if (page() === 'Compras' && canReceive()) {
           <button class="primary" (click)="modal.set('receipt')">＋ Recibir compra</button>
         }
+        @if (page() === 'Usuarios') {
+          <button class="primary" (click)="openUser()">＋ Nuevo usuario</button>
+        }
         @if (page() === 'Proveedores' && canReceive()) {
           <button class="primary" (click)="modal.set('supplier')">＋ Nuevo proveedor</button>
         }
@@ -122,103 +126,120 @@
         <div class="alert success" role="status">{{ message() }}</div>
       }
       @if (page() === 'Resumen') {
+        @if (visibleNav().length === 1) {
+          <div class="alert error">
+            Tu cuenta todavía no tiene accesos asignados. Pide al administrador que los active.
+          </div>
+        }
         <div class="stats">
-          <article>
-            <span>Ventas de hoy <i>↗</i></span>
-            <h2>{{ money(todayTotal()) }}</h2>
-            <small>{{ todaySales().length }} operaciones registradas</small>
-          </article>
-          <article>
-            <span>Productos en catálogo <i>✚</i></span>
-            <h2>{{ rows('products').length }}</h2>
-            <small>Presentaciones configuradas</small>
-          </article>
-          <article>
-            <span>Stock bajo <i class="amber">▤</i></span>
-            <h2>{{ low().length }} <em>productos</em></h2>
-            <small>Por debajo del mínimo establecido</small>
-          </article>
-          <article>
-            <span>Próximos a vencer <i class="rose">◷</i></span>
-            <h2>{{ expiring().length }} <em>lotes</em></h2>
-            <small>Dentro de los próximos 90 días</small>
-          </article>
+          @if (loaded('sales')) {
+            <article>
+              <span>Ventas de hoy <i>↗</i></span>
+              <h2>{{ money(todayTotal()) }}</h2>
+              <small>{{ todaySales().length }} operaciones registradas</small>
+            </article>
+          }
+          @if (loaded('products')) {
+            <article>
+              <span>Productos en catálogo <i>✚</i></span>
+              <h2>{{ rows('products').length }}</h2>
+              <small>Presentaciones configuradas</small>
+            </article>
+            <article>
+              <span>Stock bajo <i class="amber">▤</i></span>
+              <h2>{{ low().length }} <em>productos</em></h2>
+              <small>Por debajo del mínimo establecido</small>
+            </article>
+          }
+          @if (loaded('inventory')) {
+            <article>
+              <span>Próximos a vencer <i class="rose">◷</i></span>
+              <h2>{{ expiring().length }} <em>lotes</em></h2>
+              <small>Dentro de los próximos 90 días</small>
+            </article>
+          }
         </div>
         <div class="overview-grid">
-          <section class="card">
-            <div class="card-heading">
-              <div>
-                <h3>Últimas ventas</h3>
-                <p class="muted">Actividad reciente de la sucursal</p>
-              </div>
-              <button class="text-button" (click)="go('Ventas')">Ver todas →</button>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Comprobante</th>
-                  <th>Fecha</th>
-                  <th>Pago</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (s of rows('sales').slice(0, 6); track s['id']) {
-                  <tr>
-                    <td>
-                      <b>#{{ s['id'] }}</b>
-                    </td>
-                    <td>{{ date(s['created_at']) }}</td>
-                    <td>
-                      <span class="pill">{{ s['method'] }}</span>
-                    </td>
-                    <td class="strong">{{ money(s['total']) }}</td>
-                  </tr>
-                } @empty {
-                  <tr>
-                    <td colspan="4" class="empty">
-                      Aún no hay ventas.<small
-                        >Las operaciones aparecerán aquí al confirmar un cobro.</small
-                      >
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </section>
-          <section class="card">
-            <div class="card-heading">
-              <div>
-                <h3>Atención al inventario</h3>
-                <p class="muted">Planea tu próxima reposición</p>
-              </div>
-              <span class="badge">{{ low().length }}</span>
-            </div>
-            @for (p of low().slice(0, 5); track p['id']) {
-              <div class="stock-row">
-                <span class="product-icon">✚</span>
+          @if (loaded('sales')) {
+            <section class="card">
+              <div class="card-heading">
                 <div>
-                  <b>{{ p['name'] }}</b
-                  ><small>{{ p['sku'] }}</small>
+                  <h3>Últimas ventas</h3>
+                  <p class="muted">Actividad reciente de la sucursal</p>
                 </div>
-                <span class="pill warning">{{ p['stock'] }} {{ p['base_unit'] }}</span>
+                <button class="text-button" (click)="go('Ventas')">Ver todas →</button>
               </div>
-            } @empty {
-              <div class="empty">✓ Sin alertas de stock bajo</div>
-            }
-            <button class="text-button card-link" (click)="go('Inventario')">
-              Revisar inventario →
-            </button>
-          </section>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Comprobante</th>
+                    <th>Fecha</th>
+                    <th>Pago</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (s of rows('sales').slice(0, 6); track s['id']) {
+                    <tr>
+                      <td>
+                        <b>#{{ s['id'] }}</b>
+                      </td>
+                      <td>{{ date(s['created_at']) }}</td>
+                      <td>
+                        <span class="pill">{{ s['method'] }}</span>
+                      </td>
+                      <td class="strong">{{ money(s['total']) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="4" class="empty">
+                        Aún no hay ventas.<small
+                          >Las operaciones aparecerán aquí al confirmar un cobro.</small
+                        >
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </section>
+          }
+          @if (loaded('products')) {
+            <section class="card">
+              <div class="card-heading">
+                <div>
+                  <h3>Atención al inventario</h3>
+                  <p class="muted">Planea tu próxima reposición</p>
+                </div>
+                <span class="badge">{{ low().length }}</span>
+              </div>
+              @for (p of low().slice(0, 5); track p['id']) {
+                <div class="stock-row">
+                  <span class="product-icon">✚</span>
+                  <div>
+                    <b>{{ p['name'] }}</b
+                    ><small>{{ p['sku'] }}</small>
+                  </div>
+                  <span class="pill warning">{{ p['stock'] }} {{ p['base_unit'] }}</span>
+                </div>
+              } @empty {
+                <div class="empty">✓ Sin alertas de stock bajo</div>
+              }
+              <button class="text-button card-link" (click)="go('Inventario')">
+                Revisar inventario →
+              </button>
+            </section>
+          }
         </div>
-        <section class="welcome-banner">
-          <div class="banner-icon">✚</div>
-          <div>
-            <h3>Una operación clara, de principio a fin.</h3>
-            <p>Recibe tus compras por lote y mantén el control de cada unidad que vendes.</p>
-          </div>
-          <button (click)="go('Compras')">Ir a compras →</button>
-        </section>
+        @if (can('PURCHASES_VIEW', 'PURCHASES_RECEIVE')) {
+          <section class="welcome-banner">
+            <div class="banner-icon">✚</div>
+            <div>
+              <h3>Una operación clara, de principio a fin.</h3>
+              <p>Recibe tus compras por lote y mantén el control de cada unidad que vendes.</p>
+            </div>
+            <button (click)="go('Compras')">Ir a compras →</button>
+          </section>
+        }
       }
       @if (page() === 'Catálogo') {
         <section class="card">
@@ -288,7 +309,9 @@
                 <th>Vencimiento</th>
                 <th>Estado</th>
                 <th>Existencia base</th>
-                <th>Costo unitario</th>
+                @if (can('COSTS_VIEW')) {
+                  <th>Costo unitario</th>
+                }
               </tr>
             </thead>
             <tbody>
@@ -305,11 +328,15 @@
                     }}</span>
                   </td>
                   <td>{{ l['qty_base'] }} {{ l['base_unit'] }}</td>
-                  <td>{{ money(l['unit_cost']) }}</td>
+                  @if (can('COSTS_VIEW')) {
+                    <td>{{ money(l['unit_cost']) }}</td>
+                  }
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="6" class="empty">Sin lotes. Registra una recepción en Compras.</td>
+                  <td [attr.colspan]="can('COSTS_VIEW') ? 6 : 5" class="empty">
+                    Sin lotes. Registra una recepción en Compras.
+                  </td>
                 </tr>
               }
             </tbody>
@@ -705,6 +732,57 @@
           </table>
         </section>
       }
+      @if (page() === 'Usuarios') {
+        <section class="card table-scroll">
+          <div class="card-heading">
+            <div>
+              <h3>Quién tiene acceso y a qué</h3>
+              <p class="muted">
+                Cada persona ve y hace solo lo que actives aquí. Los cambios aplican de inmediato.
+              </p>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Rol base</th>
+                <th>Acceso</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (u of users(); track u['id']) {
+                <tr>
+                  <td>
+                    <b>{{ u['username'] }}</b>
+                    @if (u['username'] === user()!['username']) {
+                      <small>Tu cuenta</small>
+                    }
+                  </td>
+                  <td>{{ roleNames[u['role']] }}</td>
+                  <td>
+                    <span class="pill">{{ permissionSummary(u) }}</span>
+                  </td>
+                  <td>
+                    <span class="pill" [class.warning]="!u['active']">{{
+                      u['active'] ? 'Activo' : 'Desactivado'
+                    }}</span>
+                  </td>
+                  <td>
+                    <button class="text-button" (click)="openUser(u)">Editar acceso →</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="5" class="empty">Aún no hay usuarios.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
       <footer>SG Farma <span>Gestión farmacéutica · Control interno</span></footer>
     </div>
   </main>
@@ -719,7 +797,13 @@
               ? 'Nuevo producto'
               : modal() === 'supplier'
                 ? 'Nuevo proveedor'
-                : 'Recibir compra'
+                : modal() === 'user'
+                  ? editingUser()
+                    ? 'Acceso de ' + editingUser()!['username']
+                    : 'Nuevo usuario'
+                  : modal() === 'password'
+                    ? 'Cambiar mi contraseña'
+                    : 'Recibir compra'
           }}
         </h2>
         <button class="icon-button" (click)="modal.set('')" aria-label="Cerrar">✕</button>
@@ -816,6 +900,119 @@
             <button class="primary" [disabled]="busy()">Guardar producto</button>
           </div>
         </form>
+      }
+      @if (modal() === 'password') {
+        <form (ngSubmit)="changeOwnPassword()">
+          <label
+            >Nueva contraseña (mínimo 14 caracteres)<input
+              name="own"
+              type="password"
+              [(ngModel)]="ownPassword"
+              required
+              minlength="14"
+              autocomplete="new-password"
+          /></label>
+          <div class="dialog-actions">
+            <button class="primary" [disabled]="busy()">Cambiar contraseña</button>
+          </div>
+        </form>
+      }
+      @if (modal() === 'user') {
+        <form (ngSubmit)="saveUser()">
+          <div class="form-grid">
+            @if (!editingUser()) {
+              <label
+                >Usuario<input
+                  name="un"
+                  [(ngModel)]="userForm.username"
+                  required
+                  minlength="3"
+                  autocomplete="off"
+              /></label>
+              <label
+                >Contraseña inicial (mínimo 14 caracteres)<input
+                  name="pw"
+                  type="password"
+                  [(ngModel)]="userForm.password"
+                  required
+                  minlength="14"
+                  autocomplete="new-password"
+              /></label>
+            }
+            <label
+              >Rol base (plantilla)<select
+                name="role"
+                [ngModel]="userForm.role"
+                (ngModelChange)="applyRole($event)"
+                [disabled]="editingSelf()"
+              >
+                @for (r of roleKeys; track r) {
+                  <option [value]="r">{{ roleNames[r] }}</option>
+                }
+              </select></label
+            >
+          </div>
+          @if (userForm.role === 'ADMIN') {
+            <p class="muted">
+              El administrador tiene acceso total y es el único que gestiona usuarios.
+            </p>
+          } @else {
+            <p class="muted">
+              Cambiar el rol aplica su plantilla; después puedes ajustar cada permiso.
+            </p>
+            @for (g of permissionGroups(); track g.name) {
+              <fieldset class="perm-group">
+                <legend>{{ g.name }}</legend>
+                @for (p of g.items; track p.key) {
+                  <label class="check"
+                    ><input
+                      type="checkbox"
+                      [name]="p.key"
+                      [checked]="granted(p.key)"
+                      (change)="togglePermission(p.key, $any($event.target).checked)"
+                    />
+                    {{ p.label }}</label
+                  >
+                }
+              </fieldset>
+            }
+          }
+          @if (editingUser()) {
+            <label class="check"
+              ><input
+                type="checkbox"
+                name="active"
+                [(ngModel)]="userForm.active"
+                [disabled]="editingSelf()"
+              />
+              Cuenta activa (si la desactivas, la sesión se cierra al instante)</label
+            >
+          }
+          <div class="dialog-actions">
+            <button class="primary" [disabled]="busy()">
+              {{ editingUser() ? 'Guardar cambios' : 'Crear usuario' }}
+            </button>
+          </div>
+        </form>
+        @if (editingUser()) {
+          <div class="reset-box">
+            <label
+              >Restablecer contraseña (mínimo 14 caracteres)<input
+                type="password"
+                [(ngModel)]="newPassword"
+                [ngModelOptions]="{ standalone: true }"
+                autocomplete="new-password"
+            /></label>
+            <button
+              type="button"
+              class="text-button"
+              [disabled]="busy() || newPassword.length < 14"
+              (click)="resetUserPassword()"
+            >
+              Restablecer contraseña
+            </button>
+          </div>
+        }
       }
       @if (modal() === 'supplier') {
         <form (ngSubmit)="saveSupplier()">
