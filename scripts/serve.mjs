@@ -7,15 +7,22 @@ import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../dist/farmacia-web/browser/', import.meta.url));
-const upstream = process.env.API_UPSTREAM || 'http://bkn-api:8080';
+const raw = (process.env.API_UPSTREAM || '').trim() || 'http://bkn-api:8080';
 const port = Number(process.env.PORT) || 4200;
 
-if (!/^https?:\/\/([A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$/.test(upstream)) {
-  console.error(
-    'SG Farma: API_UPSTREAM debe ser una URL http://host:puerto o https://dominio, sin ruta, barra final ni credenciales.',
+// Un valor inválido no detiene el sitio: se sirve la web y /api/ responde 503 con el motivo.
+let upstream = raw;
+let upstreamError = '';
+if (!/^https?:\/\/([A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?$/.test(raw)) {
+  upstreamError = `API_UPSTREAM inválida (${JSON.stringify(raw)}): use http://host:puerto o https://dominio, sin ruta, barra final, punto final ni credenciales.`;
+} else if (/^https:\/\/[A-Za-z0-9-]+(:\d+)?$/.test(raw)) {
+  // Un alias interno de Coolify (sin puntos) habla HTTP plano: https fallaría en el handshake TLS.
+  upstream = 'http' + raw.slice(5);
+  console.warn(
+    `SG Farma: API_UPSTREAM=${raw} usa https con un alias interno; se usa ${upstream}. Corrija la variable en Coolify.`,
   );
-  process.exit(1);
 }
+if (upstreamError) console.error('SG Farma: ' + upstreamError);
 try {
   statSync(join(root, 'index.html'));
 } catch {
@@ -56,8 +63,8 @@ const security = {
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'same-origin',
 };
-const target = new URL(upstream);
-const client = target.protocol === 'https:' ? https : http;
+const target = upstreamError ? null : new URL(upstream);
+const client = target?.protocol === 'https:' ? https : http;
 
 // Se aplican al inicio de cada petición; writeHead las combina y las del backend prevalecen.
 function secure(res) {
@@ -65,6 +72,10 @@ function secure(res) {
 }
 
 function proxy(req, res) {
+  if (!target) {
+    res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('El servicio de la farmacia no está configurado (API_UPSTREAM inválida).');
+  }
   const headers = { ...req.headers };
   for (const h of [...hopByHop, 'host', 'forwarded']) delete headers[h];
   const proto = req.headers['x-forwarded-proto'];
@@ -158,7 +169,9 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, '0.0.0.0', () =>
-  console.log(`SG Farma web en 0.0.0.0:${port}; /api/ -> ${upstream}`),
+  console.log(
+    `SG Farma web en 0.0.0.0:${port}; API_UPSTREAM=${JSON.stringify(raw)}; /api/ -> ${upstreamError ? 'SIN CONFIGURAR' : upstream}`,
+  ),
 );
 for (const signal of ['SIGTERM', 'SIGINT'])
   process.on(signal, () => server.close(() => process.exit(0)));
