@@ -1,0 +1,906 @@
+<section class="invest" aria-label="Portafolio de inversión personal">
+  <header class="top">
+    <div>
+      <h2>Mi portafolio</h2>
+      @if (d(); as x) {
+        <p class="sub">
+          Datos al {{ day(x['asOf']) }} · Tipo de cambio Q{{ num(x['fx']?.gtqPerUsd) }} por US$1
+          @if (x['fx']?.stale) {
+            <span class="chip warn">atrasado</span>
+          }
+        </p>
+      }
+    </div>
+    <div class="actions">
+      <button
+        class="ghost"
+        type="button"
+        (click)="toggleTheme()"
+        [attr.aria-label]="theme() === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
+      >
+        {{ theme() === 'dark' ? '☀ Claro' : '☾ Oscuro' }}
+      </button>
+      <button class="primary" type="button" (click)="refresh()" [disabled]="refreshing()">
+        {{ refreshing() ? 'Actualizando…' : '↻ Actualizar' }}
+      </button>
+    </div>
+  </header>
+
+  <p class="disclaimer" role="note">
+    Herramienta educativa personal, no es asesoría financiera. Las rentabilidades pasadas no
+    garantizan resultados futuros.
+  </p>
+
+  <nav class="tabs" role="tablist" aria-label="Secciones">
+    @for (t of tabs; track t) {
+      <button
+        type="button"
+        role="tab"
+        [attr.aria-selected]="tab() === t"
+        [class.on]="tab() === t"
+        (click)="show(t)"
+      >
+        {{ t }}
+      </button>
+    }
+  </nav>
+
+  @if (error()) {
+    <p class="msg err" role="alert">{{ error() }}</p>
+  }
+  @if (notice()) {
+    <p class="msg info" role="status">{{ notice() }}</p>
+  }
+  @if (d() && staleSources().length && tab() !== 'Ajustes') {
+    <details class="msg warn">
+      <summary>
+        Algunos datos no se pudieron actualizar ({{ staleSources().length }}). Se muestra lo último
+        válido.
+      </summary>
+      <ul>
+        @for (s of staleSources(); track s) {
+          <li>{{ s }}</li>
+        }
+      </ul>
+    </details>
+  }
+
+  @if (loading()) {
+    <p class="empty">Cargando…</p>
+  } @else if (!d() && tab() !== 'Ajustes' && tab() !== 'Aprende') {
+    <div class="card empty">
+      <h3>Aún no hay datos</h3>
+      <p>
+        1) Ve a <button class="link" type="button" (click)="show('Ajustes')">Ajustes</button> y
+        registra tus ETFs comprados (puede ser después). 2) Pulsa <b>Actualizar</b> para traer
+        precios y mercado.
+      </p>
+    </div>
+  } @else {
+    @switch (tab()) {
+      <!-- ============================ HOY ============================ -->
+      @case ('Hoy') {
+        @if (d(); as x) {
+          @let p = x['portfolio'];
+          @for (a of x['alerts'] ?? []; track a) {
+            <p class="msg warn" role="status">{{ a }}</p>
+          }
+          <div class="grid kpis">
+            <article class="card kpi big">
+              <span class="label">Valor del portafolio</span>
+              <strong>{{ q(p['valueGtq']) }}</strong>
+              <span class="muted">{{ usd(p['valueUsd']) }}</span>
+            </article>
+            <article class="card kpi">
+              <span class="label">Cambio de hoy</span>
+              <strong [class]="tone(p['dayChangePct'])">{{
+                pct(p['dayChangePct'], 2, true)
+              }}</strong>
+              <span class="muted"
+                >{{ q(p['dayChangeUsd'] * x['fx'].gtqPerUsd) }} · {{ usd(p['dayChangeUsd']) }}</span
+              >
+            </article>
+            <article class="card kpi">
+              <span class="label">Ganancia total</span>
+              <strong [class]="tone(p['totalGainUsd'])">{{ q(p['totalGainGtq']) }}</strong>
+              <span class="muted">{{ pct(p['totalGainPct'], 2, true) }} sobre lo invertido</span>
+            </article>
+            <article class="card kpi">
+              <span class="label">Semáforo de mercado</span>
+              <strong class="state {{ x['market'].overall }}">{{
+                stateLabel(x['market'].overall)
+              }}</strong>
+              <button class="link" type="button" (click)="show('Semáforo')">Ver por qué</button>
+            </article>
+          </div>
+
+          <article class="card">
+            <h3>Progreso hacia tu meta de {{ q(p['goal'].goalGtq) }}</h3>
+            <div
+              class="bar"
+              role="progressbar"
+              [attr.aria-valuenow]="p['goal'].progressPct"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <span [style.width.%]="p['goal'].progressPct"></span>
+            </div>
+            <p>
+              <b>{{ pct(p['goal'].progressPct, 1) }}</b> completado. {{ eta(p['goal']) }}
+            </p>
+          </article>
+
+          <article class="card story">
+            <h3>Lo que importa hoy</h3>
+            <p>{{ x['narrative'] }}</p>
+            <p class="muted small">
+              Este texto se arma con reglas fijas a partir de tus datos (no es una predicción).
+              <button class="link" type="button" (click)="openGlossary('pani')">
+                ¿Por qué no vender en pánico?
+              </button>
+            </p>
+          </article>
+
+          <article class="card">
+            <h3>Mi portafolio frente al S&amp;P 500</h3>
+            @if ((x['charts'].dates ?? []).length > 1) {
+              <div class="chart">
+                <canvas
+                  id="ch-growth"
+                  role="img"
+                  aria-label="Gráfica del valor del portafolio, del S&P 500 con los mismos aportes y de lo aportado"
+                ></canvas>
+              </div>
+              <p class="muted small">
+                La línea punteada muestra cuánto tendrías si cada compra tuya se hubiera hecho en el
+                S&amp;P 500.
+              </p>
+            } @else {
+              <p class="muted">
+                La gráfica aparece cuando haya más de un día de historial desde tu primera compra.
+              </p>
+            }
+          </article>
+        }
+      }
+
+      <!-- ============================ SEMÁFORO ============================ -->
+      @case ('Semáforo') {
+        @if (d(); as x) {
+          @let m = x['market'];
+          <article class="card light {{ m.overall }}">
+            <span class="label">Estado general</span>
+            <strong class="state {{ m.overall }}">{{ stateLabel(m.overall) }}</strong>
+            <p>{{ m.summary }}</p>
+            <p class="muted small">
+              S&amp;P 500: {{ num(m.sp500.price, 0) }} ({{ pct(m.sp500.dayPct, 2, true) }} hoy) ·
+              {{ pct(m.sp500.drawdownPct, 1) }} desde su máximo · al {{ day(m.sp500.asOf) }}
+            </p>
+          </article>
+          <div class="grid two">
+            @for (i of m.indicators; track i.id) {
+              <article class="card ind">
+                <header>
+                  <h3>{{ i.label }}</h3>
+                  <span class="chip state {{ i.state }}">{{ stateLabel(i.state) }}</span>
+                </header>
+                <strong class="value">{{ i.value }}</strong>
+                <p>{{ i.reading }}</p>
+                <details>
+                  <summary>Qué significa</summary>
+                  <p>{{ i.means }}</p>
+                </details>
+                <details>
+                  <summary>Qué ha pasado históricamente</summary>
+                  <p>{{ i.history }}</p>
+                </details>
+              </article>
+            }
+          </div>
+          @if (m.macro) {
+            <article class="card">
+              <h3>Otros datos económicos</h3>
+              <dl class="facts">
+                @if (m.macro['DGS10']) {
+                  <div>
+                    <dt>Bono EE. UU. a 10 años</dt>
+                    <dd>{{ num(m.macro['DGS10'].value) }}%</dd>
+                  </div>
+                }
+                @if (m.macro['DGS2']) {
+                  <div>
+                    <dt>Bono EE. UU. a 2 años</dt>
+                    <dd>{{ num(m.macro['DGS2'].value) }}%</dd>
+                  </div>
+                }
+                @if (m.macro['FEDFUNDS']) {
+                  <div>
+                    <dt>Tasa de la Fed</dt>
+                    <dd>{{ num(m.macro['FEDFUNDS'].value) }}%</dd>
+                  </div>
+                }
+                @if (m.macro['inflationYoyPct'] !== undefined) {
+                  <div>
+                    <dt>Inflación (12 meses)</dt>
+                    <dd>{{ num(m.macro['inflationYoyPct']) }}%</dd>
+                  </div>
+                }
+              </dl>
+            </article>
+          }
+        }
+      }
+
+      <!-- ============================ PORTAFOLIO ============================ -->
+      @case ('Portafolio') {
+        @if (d(); as x) {
+          <article class="card">
+            <h3>Pesos frente al objetivo</h3>
+            @if (holdings().length) {
+              <div class="chart short">
+                <canvas
+                  id="ch-weights"
+                  role="img"
+                  aria-label="Peso actual y objetivo de cada ETF"
+                ></canvas>
+              </div>
+            }
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ETF</th>
+                    <th class="r">Valor</th>
+                    <th class="r">Peso</th>
+                    <th class="r">Objetivo</th>
+                    <th class="r">Desvío</th>
+                    <th class="r">Ganancia</th>
+                    <th class="r">Caída desde máx.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (h of holdings(); track h['ticker']) {
+                    <tr [class.out]="h['outOfBand']">
+                      <th scope="row">
+                        {{ h['ticker'] }}<small>{{ h['shares'] }} acc.</small>
+                      </th>
+                      <td class="r">
+                        {{ q(h['valueGtq']) }}<small>{{ usd(h['valueUsd']) }}</small>
+                      </td>
+                      <td class="r">{{ pct(h['weightPct'], 1) }}</td>
+                      <td class="r">{{ pct(h['targetPct'], 1) }}</td>
+                      <td class="r" [class]="h['outOfBand'] ? 'down' : ''">
+                        {{ pct(h['deviationPts'], 1, true) }}
+                        @if (h['outOfBand']) {
+                          <small>fuera de banda</small>
+                        }
+                      </td>
+                      <td class="r" [class]="tone(h['gainPct'])">
+                        {{ pct(h['gainPct'], 1, true) }}
+                      </td>
+                      <td class="r">{{ pct(h['drawdownPct'], 1) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <article class="card">
+            <h3>Valor y caídas en el tiempo</h3>
+            @if ((x['charts'].dates ?? []).length > 1) {
+              <div class="chart">
+                <canvas
+                  id="ch-growth"
+                  role="img"
+                  aria-label="Valor del portafolio frente al S&P 500 y lo aportado"
+                ></canvas>
+              </div>
+              <h4>Caída desde el máximo</h4>
+              <div class="chart short">
+                <canvas
+                  id="ch-drawdown"
+                  role="img"
+                  aria-label="Caída del portafolio desde su máximo"
+                ></canvas>
+              </div>
+            } @else {
+              <p class="muted">Se necesita más de un día de historial para dibujar las gráficas.</p>
+            }
+          </article>
+          <p class="muted small">
+            Los precios son de {{ day(holdings()[0]?.['priceAsOf']) }}. Ganancia = valor actual
+            frente a tu precio promedio de compra.
+          </p>
+        }
+      }
+
+      <!-- ============================ RIESGO ============================ -->
+      @case ('Riesgo') {
+        @if (d(); as x) {
+          @let p = x['portfolio'];
+          <article class="card rebalance" [class.needed]="p['rebalance'].needed">
+            <h3>Rebalanceo</h3>
+            @if (p['rebalance'].needed) {
+              <p>
+                <b>Algún ETF salió de su banda de ±{{ p['rebalance'].bandPts }} puntos.</b> No hace
+                falta vender: dirige tu próximo aporte así.
+              </p>
+              <ul class="buys">
+                @for (b of x['calendar'].buys; track b.ticker) {
+                  <li>
+                    <b>{{ b.ticker }}</b> {{ q(b.gtq) }}
+                    <span class="muted"
+                      >({{ usd(b.usd)
+                      }}{{ b.approxShares ? ' ≈ ' + b.approxShares + ' acc.' : '' }})</span
+                    >
+                  </li>
+                }
+              </ul>
+              <p class="muted small">
+                Con esto el mayor desvío queda en
+                {{ num(p['rebalance'].afterMaxDeviationPts, 1) }} puntos.
+              </p>
+            } @else {
+              <p>
+                ✅ Todo está dentro de su banda de ±{{ p['rebalance'].bandPts }} puntos. No hay nada
+                que corregir.
+                <button class="link" type="button" (click)="openGlossary('banda')">
+                  ¿Qué es la banda?
+                </button>
+              </p>
+            }
+          </article>
+
+          @if (p['concentration'].length) {
+            <p class="msg warn" role="status">
+              ⚠ Concentración alta:
+              @for (c of p['concentration']; track c.ticker) {
+                <b>{{ c.ticker }}</b> pesa {{ pct(c.weightPct, 1) }} (límite {{ c.limitPct }}%).
+              }
+            </p>
+          }
+
+          <article class="card">
+            <h3>Métricas de riesgo</h3>
+            @if (p['risk'].enoughData) {
+              <dl class="facts">
+                <div>
+                  <dt>
+                    <button class="term" type="button" (click)="openTerm('volatilidad')">
+                      Volatilidad anual
+                    </button>
+                  </dt>
+                  <dd>{{ pct(p['risk'].volAnnPct, 1) }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <button class="term" type="button" (click)="openTerm('drawdown')">
+                      Caída máxima
+                    </button>
+                  </dt>
+                  <dd>{{ pct(p['risk'].maxDrawdownPct, 1) }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <button class="term" type="button" (click)="openTerm('sharpe')">Sharpe</button>
+                  </dt>
+                  <dd>{{ num(p['risk'].sharpe) }}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <button class="term" type="button" (click)="openTerm('beta')">
+                      Beta frente al S&amp;P
+                    </button>
+                  </dt>
+                  <dd>{{ num(p['risk'].beta) }}</dd>
+                </div>
+              </dl>
+              <p class="muted small">
+                Calculado con {{ p['risk'].historyDays }} días de historial, sin contar tus aportes
+                (<button class="link" type="button" (click)="openTerm('twr')">¿cómo?</button>). Tasa
+                libre de riesgo {{ pct(p['risk'].riskFreePct, 2) }}
+                @if (p['risk'].riskFreeAssumed) {
+                  (sin dato de la Fed: se supuso 0%, lo que infla un poco el Sharpe)
+                }
+                . Con poco historial son cifras orientativas.
+              </p>
+            } @else {
+              <p class="muted">{{ p['risk'].note }}</p>
+            }
+          </article>
+
+          <article class="card">
+            <h3>
+              Si volviera una crisis…
+              <button class="term" type="button" (click)="openTerm('prueba')">
+                (¿qué es esto?)
+              </button>
+            </h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Escenario</th>
+                    <th class="r">Pérdida estimada</th>
+                    <th class="r">En %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (s of p['stress']; track s.scenario) {
+                    <tr>
+                      <th scope="row">{{ s.scenario }}</th>
+                      <td class="r down">
+                        {{ q(s.lossGtq) }}<small>{{ usd(s.lossUsd, 0) }}</small>
+                      </td>
+                      <td class="r down">{{ pct(s.lossPct, 1) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="muted small">
+              Aplica caídas históricas aproximadas por tipo de activo a tu mezcla actual. Puedes
+              ajustarlas en Ajustes. No son predicciones.
+            </p>
+          </article>
+        }
+      }
+
+      <!-- ============================ CAÍDAS ============================ -->
+      @case ('Caídas') {
+        @if (d(); as x) {
+          @let pl = x['plan'];
+          <article class="card">
+            <span class="label">S&amp;P 500 frente a su máximo</span>
+            <strong class="value">{{ pct(pl.drawdownPct, 1) }}</strong>
+            <p>{{ pl.message }}</p>
+            @if (pl.emergencyWarning) {
+              <p class="msg warn">
+                ⚠ Tu fondo de emergencia está por debajo del mínimo. Primero complétalo; no compres
+                de más durante la caída con ese dinero.
+              </p>
+            }
+          </article>
+          <div class="grid three">
+            @for (r of pl.rules; track r.atPct) {
+              <article class="card rule" [class.active]="pl.active && pl.active.atPct === r.atPct">
+                <span class="chip">Al −{{ -r.atPct }}%</span>
+                <h3>{{ r.title }}</h3>
+                <p>{{ r.action }}</p>
+                @if (r.needsEmergencyFund) {
+                  <p class="muted small">Solo si tu fondo de emergencia está completo.</p>
+                }
+              </article>
+            }
+          </div>
+          <article class="card calm">
+            <h3>🧘 {{ pl.reminder }}</h3>
+            <button class="link" type="button" (click)="openGlossary('pani')">Leer por qué</button>
+          </article>
+          <article class="card">
+            <h3>Cuánto tardó el S&amp;P 500 en recuperarse</h3>
+            @if (pl.recovery.length) {
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Caída de al menos</th>
+                      <th class="r">Veces</th>
+                      <th class="r">Hasta el fondo</th>
+                      <th class="r">Hasta recuperar</th>
+                      <th class="r">La peor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (s of pl.recovery; track s.thresholdPct) {
+                      <tr>
+                        <th scope="row">−{{ s.thresholdPct }}%</th>
+                        <td class="r">{{ s.episodes }}</td>
+                        <td class="r">{{ monthsText(s.medianMonthsToBottom) }}</td>
+                        <td class="r">
+                          {{ monthsText(s.medianMonthsToRecover) }}
+                          @if (s.stillOpen) {
+                            <small>{{ s.stillOpen }} sin recuperar aún</small>
+                          }
+                        </td>
+                        <td class="r down">{{ pct(s.worstPct, 0) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <p class="muted small">
+                Mediana de todos los episodios en el historial del índice. Cada caída pasada terminó
+                recuperándose, pero eso no garantiza que la próxima lo haga igual de rápido.
+              </p>
+            } @else {
+              <p class="muted">
+                Aún no hay historial suficiente del S&amp;P 500. Pulsa Actualizar.
+              </p>
+            }
+          </article>
+        }
+      }
+
+      <!-- ============================ COMPRAS ============================ -->
+      @case ('Compras') {
+        @if (d(); as x) {
+          @let c = x['calendar'];
+          <article class="card">
+            <h3>Tu próximo aporte</h3>
+            <p class="big-line">
+              {{ q(c.monthlyContributionGtq) }}
+              <span class="muted">≈ {{ usd(c.monthlyContributionUsd) }}</span>
+            </p>
+            <p>{{ c.note }}</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ETF</th>
+                    <th class="r">En quetzales</th>
+                    <th class="r">En dólares</th>
+                    <th class="r">≈ Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (b of c.buys; track b.ticker) {
+                    <tr>
+                      <th scope="row">{{ b.ticker }}</th>
+                      <td class="r">{{ q(b.gtq) }}</td>
+                      <td class="r">{{ usd(b.usd) }}</td>
+                      <td class="r">{{ b.approxShares ?? '—' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="muted small">
+              Solo compras: la herramienta no se conecta a ningún broker ni ejecuta operaciones.
+              Compra tú en tu cuenta y luego registra la posición en Ajustes.
+            </p>
+          </article>
+        }
+      }
+
+      <!-- ============================ NOTICIAS ============================ -->
+      @case ('Noticias') {
+        @if (d(); as x) {
+          @if (!x['news'].length) {
+            <article class="card empty">
+              <p>No hay noticias relevantes por ahora. {{ x['sources'].news?.error }}</p>
+            </article>
+          }
+          @for (n of x['news']; track n.url) {
+            <article class="card news">
+              <a [href]="n.url" target="_blank" rel="noopener noreferrer">{{ n.title }}</a>
+              <p class="muted small">
+                {{ n.source }} · {{ day(n.publishedAt) }}{{ n.ticker ? ' · ' + n.ticker : '' }}
+              </p>
+              <p><b>Por qué importa:</b> {{ n.whyItMatters }}</p>
+            </article>
+          }
+        }
+      }
+
+      <!-- ============================ APRENDE ============================ -->
+      @case ('Aprende') {
+        <label class="search">
+          <span class="sr">Buscar en el glosario</span>
+          <input
+            type="search"
+            placeholder="Buscar un término…"
+            [ngModel]="glossaryFilter()"
+            (ngModelChange)="glossaryFilter.set($event)"
+          />
+        </label>
+        @for (g of glossaryShown(); track g.key) {
+          <article class="card gl" [id]="'g-' + g.key">
+            <h3>{{ g.title }}</h3>
+            <p>{{ g.text }}</p>
+          </article>
+        }
+        @if (!glossaryShown().length) {
+          <p class="muted">Sin resultados.</p>
+        }
+      }
+
+      <!-- ============================ AJUSTES ============================ -->
+      @case ('Ajustes') {
+        @if (cfg(); as c) {
+          <article class="card">
+            <h3>Mis ETFs comprados</h3>
+            <form class="row-form" (ngSubmit)="savePosition()">
+              <label
+                >ETF<input
+                  name="ticker"
+                  [(ngModel)]="posForm['ticker']"
+                  required
+                  maxlength="15"
+                  placeholder="VOO"
+                  autocapitalize="characters"
+              /></label>
+              <label
+                >Acciones<input
+                  name="shares"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="posForm['shares']"
+                  required
+              /></label>
+              <label
+                >Precio promedio (US$)<input
+                  name="avg"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="posForm['avgPriceUsd']"
+                  required
+              /></label>
+              <label
+                >Fecha de compra<input
+                  name="on"
+                  type="date"
+                  [(ngModel)]="posForm['boughtOn']"
+                  required
+              /></label>
+              <div class="btns">
+                <button class="primary" type="submit">
+                  {{ editingPosition() === null ? 'Agregar' : 'Guardar cambios' }}
+                </button>
+                @if (editingPosition() !== null) {
+                  <button class="ghost" type="button" (click)="cancelPosition()">Cancelar</button>
+                }
+              </div>
+            </form>
+            @if (positions().length) {
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ETF</th>
+                      <th class="r">Acciones</th>
+                      <th class="r">Precio prom.</th>
+                      <th>Fecha</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (p of positions(); track p['id']) {
+                      <tr>
+                        <th scope="row">{{ p['ticker'] }}</th>
+                        <td class="r">{{ p['shares'] }}</td>
+                        <td class="r">{{ usd(p['avgPriceUsd']) }}</td>
+                        <td>{{ day(p['boughtOn']) }}</td>
+                        <td class="r">
+                          <button class="link" type="button" (click)="editPosition(p)">
+                            Editar
+                          </button>
+                          <button class="link danger" type="button" (click)="deletePosition(p)">
+                            Quitar
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="muted">Aún no registras compras.</p>
+            }
+          </article>
+
+          <article class="card">
+            <h3>Mis aportes</h3>
+            <form class="row-form" (ngSubmit)="saveContribution()">
+              <label
+                >Fecha<input name="cday" type="date" [(ngModel)]="contribForm['day']" required
+              /></label>
+              <label
+                >Monto (Q)<input
+                  name="cgtq"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="contribForm['gtq']"
+                  required
+              /></label>
+              <label
+                >Tipo de cambio<input
+                  name="cfx"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="contribForm['fx']"
+                  required
+              /></label>
+              <div class="btns"><button class="primary" type="submit">Agregar aporte</button></div>
+            </form>
+            @if (contributions().length) {
+              <p class="muted small">
+                Total aportado: <b>{{ q(contributedGtq()) }}</b>
+              </p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th class="r">Quetzales</th>
+                      <th class="r">Dólares</th>
+                      <th class="r">Cambio</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (k of contributions(); track k['id']) {
+                      <tr>
+                        <td>{{ day(k['day']) }}</td>
+                        <td class="r">{{ q(k['gtq']) }}</td>
+                        <td class="r">{{ usd(k['usd']) }}</td>
+                        <td class="r">{{ num(k['fx']) }}</td>
+                        <td class="r">
+                          <button class="link danger" type="button" (click)="deleteContribution(k)">
+                            Quitar
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </article>
+
+          <form class="card plan" (ngSubmit)="saveConfig()">
+            <h3>Mi plan</h3>
+            <h4>
+              Cartera objetivo
+              <span class="chip" [class.warn]="targetSum() !== 100">suma {{ targetSum() }}%</span>
+            </h4>
+            @for (r of c['targetRows']; track $index) {
+              <div class="row-form tight">
+                <label
+                  >ETF<input [name]="'t' + $index" [(ngModel)]="r.ticker" maxlength="15"
+                /></label>
+                <label
+                  >Porcentaje<input
+                    [name]="'p' + $index"
+                    type="number"
+                    step="any"
+                    min="0"
+                    max="100"
+                    [(ngModel)]="r.pct"
+                /></label>
+                <label
+                  >Tipo
+                  <select [name]="'c' + $index" [(ngModel)]="r.cls">
+                    @for (k of classes; track k[0]) {
+                      <option [value]="k[0]">{{ k[1] }}</option>
+                    }
+                  </select>
+                </label>
+                <button class="link danger" type="button" (click)="removeTarget($index)">
+                  Quitar
+                </button>
+              </div>
+            }
+            <button class="ghost" type="button" (click)="addTarget()">+ Agregar ETF</button>
+
+            <h4>Números del plan</h4>
+            <div class="row-form">
+              <label
+                >Aporte mensual (Q)<input
+                  name="monthly"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['monthlyContributionGtq']"
+              /></label>
+              <label
+                >Meta (Q)<input
+                  name="goal"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['goalGtq']"
+              /></label>
+              <label
+                >Banda de rebalanceo (± puntos)<input
+                  name="band"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['rebalanceBandPts']"
+              /></label>
+              <label
+                >Límite de concentración (%)<input
+                  name="conc"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['concentrationLimitPct']"
+              /></label>
+              <label
+                >Rendimiento anual esperado (%)<input
+                  name="ret"
+                  type="number"
+                  step="any"
+                  [(ngModel)]="c['expectedAnnualReturnPct']"
+              /></label>
+              <label
+                >Tipo de cambio de respaldo (Q por US$1)<input
+                  name="fxb"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['fxFallbackGtqPerUsd']"
+              /></label>
+              <label
+                >Fondo de emergencia mínimo (Q)<input
+                  name="efmin"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['emergencyFundMinGtq']"
+              /></label>
+              <label
+                >Fondo de emergencia actual (Q)<input
+                  name="efnow"
+                  type="number"
+                  step="any"
+                  min="0"
+                  [(ngModel)]="c['emergencyFundCurrentGtq']"
+              /></label>
+            </div>
+
+            <h4>Plan para caídas</h4>
+            @for (r of c['dropRows']; track $index) {
+              <div class="row-form tight">
+                <label
+                  >Caída (%)<input
+                    [name]="'da' + $index"
+                    type="number"
+                    min="1"
+                    max="90"
+                    [(ngModel)]="r.depth"
+                /></label>
+                <label>Título<input [name]="'dt' + $index" [(ngModel)]="r.title" /></label>
+                <label class="wide"
+                  >Qué haré<input [name]="'dx' + $index" [(ngModel)]="r.action"
+                /></label>
+                <label class="check"
+                  ><input
+                    [name]="'de' + $index"
+                    type="checkbox"
+                    [(ngModel)]="r.needsEmergencyFund"
+                  />
+                  Solo con fondo completo</label
+                >
+                <button class="link danger" type="button" (click)="removeDropRule($index)">
+                  Quitar
+                </button>
+              </div>
+            }
+            <button class="ghost" type="button" (click)="addDropRule()">+ Agregar regla</button>
+
+            <div class="btns"><button class="primary" type="submit">Guardar plan</button></div>
+          </form>
+        } @else {
+          <p class="empty">Cargando ajustes…</p>
+        }
+      }
+    }
+  }
+
+  @if (term(); as t) {
+    <div class="popover" role="dialog" aria-modal="false" [attr.aria-label]="t.title">
+      <h4>{{ t.title }}</h4>
+      <p>{{ t.text }}</p>
+      <div class="btns">
+        <button class="ghost" type="button" (click)="closeTerm()">Cerrar</button>
+        <button class="link" type="button" (click)="openGlossary(t.key)">Ver en el glosario</button>
+      </div>
+    </div>
+  }
+</section>

@@ -869,6 +869,13 @@
           </table>
         </section>
       }
+      @if (page() === 'Inversiones' && user()?.['features']?.['invest']) {
+        @if (investCmp(); as panel) {
+          <ng-container *ngComponentOutlet="$any(panel); inputs: { api: investApi }" />
+        } @else {
+          <p class="muted">Cargando portafolio…</p>
+        }
+      }
       @if (page() === 'Configuración') {
         @if (settings(); as cfg) {
           <section class="card settings-card">
