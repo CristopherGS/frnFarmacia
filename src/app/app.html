@@ -404,6 +404,80 @@
         </div>
       }
       @if (page() === 'Compras') {
+        @if (can('INVOICES_IMPORT', 'PURCHASES_RECEIVE')) {
+          <section class="card table-scroll invoices">
+            <div class="card-heading">
+              <div>
+                <h3>Facturas de proveedores</h3>
+                <p class="muted">
+                  Sube la foto o el PDF: se lee solo y queda como borrador para que lo revises. No
+                  entra al inventario hasta que lo confirmes.
+                </p>
+              </div>
+              @if (can('INVOICES_IMPORT')) {
+                <label class="primary upload-button"
+                  >＋ Subir factura<input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    hidden
+                    [disabled]="busy()"
+                    (change)="uploadInvoice($event)"
+                /></label>
+              }
+            </div>
+            @if (drafts().length) {
+              <table>
+                <thead>
+                  <tr>
+                    <th>Factura</th>
+                    <th>Estado</th>
+                    <th>Líneas</th>
+                    <th>Subida</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (d of drafts(); track d['id']) {
+                    <tr>
+                      <td>
+                        <b>{{ d['filename'] }}</b>
+                        @if (d['supplier_text']) {
+                          <small>{{ d['supplier_text'] }} · {{ d['document'] }}</small>
+                        }
+                      </td>
+                      <td>
+                        <span
+                          class="pill"
+                          [class.warning]="d['status'] === 'FAILED' || d['status'] === 'PENDING'"
+                          >{{ statusLabel(d) }}</span
+                        >
+                        @if (d['error']) {
+                          <small>{{ d['error'] }}</small>
+                        }
+                      </td>
+                      <td>{{ d['line_count'] }}</td>
+                      <td>{{ date(d['created_at']) }}</td>
+                      <td>
+                        @if (d['status'] === 'READY' && canReceive()) {
+                          <button class="text-button" (click)="reviewDraft(d)">
+                            Revisar y confirmar →
+                          </button>
+                        }
+                        @if (
+                          d['status'] === 'READY' ||
+                          d['status'] === 'FAILED' ||
+                          d['status'] === 'PENDING'
+                        ) {
+                          <button class="text-button" (click)="discardDraft(d)">Descartar</button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </section>
+        }
         <section class="card table-scroll">
           <table>
             <thead>
@@ -1040,7 +1114,7 @@
                     : 'Recibir compra'
           }}
         </h2>
-        <button class="icon-button" (click)="modal.set('')" aria-label="Cerrar">✕</button>
+        <button class="icon-button" (click)="closeModal()" aria-label="Cerrar">✕</button>
       </div>
       @if (error()) {
         <div class="alert error">{{ error() }}</div>
@@ -1271,6 +1345,22 @@
         </form>
       }
       @if (modal() === 'receipt') {
+        @if (draftId()) {
+          <div class="alert success">
+            Leída de una factura. Revisa cada línea (sobre todo las marcadas en ámbar) y confirma
+            solo cuando todo coincida. Las cantidades son en <b>presentaciones</b> (cajas), no en
+            unidades sueltas.
+          </div>
+          @if (draftPreview(); as pv) {
+            <div class="invoice-preview">
+              @if (pv.type.startsWith('image/')) {
+                <img [src]="pv.url" [alt]="'Factura ' + pv.name" />
+              } @else {
+                <a [href]="pv.url" target="_blank" rel="noopener">Ver la factura ({{ pv.name }})</a>
+              }
+            </div>
+          }
+        }
         <form (ngSubmit)="saveReceipt()">
           <div class="form-grid">
             <label
@@ -1285,7 +1375,10 @@
             /></label>
           </div>
           @for (l of receipt.lines; track $index; let i = $index) {
-            <div class="receipt-line">
+            <div class="receipt-line" [class.needs-review]="l.low">
+              @if (l.hint) {
+                <p class="line-hint" [class.warn]="l.low">Factura: «{{ l.hint }}»</p>
+              }
               <button
                 type="button"
                 class="text-button scan-button"

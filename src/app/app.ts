@@ -20,6 +20,7 @@ export class App implements OnDestroy {
   } | null = null;
   private cashTimer: ReturnType<typeof setInterval>;
   private accessTimer: ReturnType<typeof setInterval>;
+  private draftTimer: ReturnType<typeof setInterval>;
   user = signal<Row | null>(null);
   busy = signal(false);
   error = signal('');
@@ -80,6 +81,9 @@ export class App implements OnDestroy {
   brandTail = computed(() => this.brand().name.trim().split(/\s+/).at(-1) ?? '');
   modules = computed(() => new Set<string>(this.user()?.['modules'] ?? []));
   rxOn = computed(() => this.modules().has('RX'));
+  drafts = signal<Row[]>([]);
+  draftId = signal<number | null>(null);
+  draftPreview = signal<{ url: string; type: string; name: string } | null>(null);
   settings = signal<Row | null>(null);
   settingsForm = this.emptySettingsForm();
   keys = signal<Row[]>([]);
@@ -153,6 +157,16 @@ export class App implements OnDestroy {
     }, 15000);
     // Si el administrador cambia permisos o desactiva la cuenta, la pantalla lo refleja sin recargar.
     this.accessTimer = setInterval(() => void this.syncAccess(), 30000);
+    // Mientras una factura se está leyendo, la lista se actualiza sola.
+    this.draftTimer = setInterval(() => {
+      if (
+        this.user() &&
+        !this.busy() &&
+        this.page() === 'Compras' &&
+        this.drafts().some((d) => d['status'] === 'PENDING')
+      )
+        void this.loadDrafts();
+    }, 5000);
   }
   rows(name: string) {
     return this.data()[name] || [];
@@ -226,7 +240,16 @@ export class App implements OnDestroy {
     };
   }
   emptyLine() {
-    return { presentationId: 0, quantity: 1, lot: '', expiresOn: '', totalCost: 0 };
+    return {
+      presentationId: 0,
+      quantity: 1,
+      lot: '',
+      expiresOn: '',
+      totalCost: 0,
+      // Solo para borradores de factura: lo que decía la factura y si conviene revisarlo.
+      hint: '',
+      low: false,
+    };
   }
   async request(
     path: string,
@@ -240,10 +263,14 @@ export class App implements OnDestroy {
       headers: {
         ...(body === undefined
           ? {}
-          : { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': this.csrf }),
+          : {
+              // Con un archivo el navegador pone solo el Content-Type (con su boundary).
+              ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+              'X-XSRF-TOKEN': this.csrf,
+            }),
         ...extra,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     });
     if (!r.ok) {
       if (r.status === 401) {
@@ -377,6 +404,7 @@ export class App implements OnDestroy {
     this.message.set('');
     if (p === 'Usuarios') void this.whenIdle(() => this.loadUsers());
     if (p === 'Configuración') void this.whenIdle(() => this.loadSettings());
+    if (p === 'Compras') void this.loadDrafts();
   }
   money(v: unknown) {
     return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(
@@ -720,6 +748,101 @@ export class App implements OnDestroy {
       this.error.set('No se pudo copiar; selecciónalo y cópialo a mano.');
     }
   }
+  statusLabel(d: Row) {
+    return (
+      (
+        {
+          PENDING: 'Leyendo…',
+          READY: 'Lista para revisar',
+          FAILED: 'No se pudo leer',
+          CONFIRMED: 'Confirmada',
+          DISCARDED: 'Descartada',
+        } as Record<string, string>
+      )[d['status']] ?? d['status']
+    );
+  }
+  async loadDrafts() {
+    if (!this.can('INVOICES_IMPORT', 'PURCHASES_RECEIVE')) return;
+    try {
+      this.drafts.set(await this.request('/receipts/drafts'));
+    } catch {}
+  }
+  async uploadInvoice(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    await this.run(async () => {
+      const form = new FormData();
+      form.append('file', file);
+      await this.request('/receipts/drafts', form);
+      await this.loadDrafts();
+      this.message.set('Factura enviada. La estamos leyendo; aparecerá lista para revisar.');
+    });
+  }
+  // Carga el borrador en "Recibir compra" para que una persona lo revise y confirme.
+  async reviewDraft(d: Row) {
+    await this.run(async () => {
+      // El borrador puede apuntar a un proveedor o producto creado hace poco por otra persona.
+      await this.refresh(['suppliers', 'presentations', 'products']);
+      const full = await this.request('/receipts/drafts/' + d['id']);
+      this.receipt = {
+        supplierId: full['supplier_id'] ?? 0,
+        document: full['document'] ?? '',
+        lines: full['lines'].map((l: Row) => {
+          const matched = !!l['presentation_id'];
+          const note = !matched
+            ? ' · elige el producto'
+            : l['method'] === 'NAME'
+              ? ' · sugerido por nombre (' + Math.round(Number(l['confidence']) * 100) + '%)'
+              : '';
+          return {
+            presentationId: l['presentation_id'] ?? 0,
+            quantity: Math.max(1, Math.round(Number(l['quantity']) || 1)),
+            lot: l['lot'] ?? '',
+            expiresOn: l['expires_on'] ?? '',
+            totalCost: l['total_cost'] ?? 0,
+            hint: l['description'] + note,
+            low: !matched || Number(l['confidence']) < 0.85,
+          };
+        }),
+      };
+      this.draftId.set(d['id']);
+      this.modal.set('receipt');
+      void this.loadPreview(d);
+    });
+  }
+  private async loadPreview(d: Row) {
+    try {
+      const r = await fetch('/api/v1/receipts/drafts/' + d['id'] + '/file', {
+        credentials: 'same-origin',
+      });
+      if (!r.ok) return;
+      this.closePreview();
+      this.draftPreview.set({
+        url: URL.createObjectURL(await r.blob()),
+        type: d['content_type'],
+        name: d['filename'],
+      });
+    } catch {}
+  }
+  private closePreview() {
+    const p = this.draftPreview();
+    if (p) URL.revokeObjectURL(p.url);
+    this.draftPreview.set(null);
+  }
+  closeModal() {
+    this.modal.set('');
+    this.draftId.set(null);
+    this.closePreview();
+  }
+  async discardDraft(d: Row) {
+    await this.run(async () => {
+      await this.request('/receipts/drafts/' + d['id'] + '/discard', {});
+      await this.loadDrafts();
+      this.message.set('Factura descartada.');
+    });
+  }
   async saveProduct() {
     await this.run(async () => {
       const created = await this.request('/products', this.product);
@@ -756,10 +879,24 @@ export class App implements OnDestroy {
   }
   async saveReceipt() {
     await this.run(async () => {
-      await this.request('/receipts', this.receipt);
-      this.modal.set('');
+      // Se envía solo lo que el servidor espera; los avisos de la factura se quedan en la pantalla.
+      const payload = {
+        supplierId: this.receipt.supplierId,
+        document: this.receipt.document,
+        lines: this.receipt.lines.map((l) => ({
+          presentationId: l.presentationId,
+          quantity: l.quantity,
+          lot: l.lot,
+          expiresOn: l.expiresOn,
+          totalCost: l.totalCost,
+        })),
+      };
+      const draft = this.draftId();
+      await this.request(draft ? '/receipts/drafts/' + draft + '/confirm' : '/receipts', payload);
+      this.closeModal();
       this.receipt = { supplierId: 0, document: '', lines: [this.emptyLine()] };
       await this.refresh();
+      if (draft) await this.loadDrafts();
       this.message.set('Recepción confirmada. Inventario actualizado en unidades base.');
     });
   }
@@ -894,5 +1031,7 @@ export class App implements OnDestroy {
   ngOnDestroy() {
     clearInterval(this.cashTimer);
     clearInterval(this.accessTimer);
+    clearInterval(this.draftTimer);
+    this.closePreview();
   }
 }
