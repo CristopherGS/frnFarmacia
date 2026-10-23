@@ -26,6 +26,8 @@ export class App implements OnDestroy {
   error = signal('');
   message = signal('');
   page = signal('Resumen');
+  // El panel de inversiones es un trozo aparte: solo se descarga cuando el dueño entra a él.
+  investCmp = signal<unknown>(null);
   search = signal('');
   modal = signal('');
   data = signal<Record<string, Row[]>>({});
@@ -55,6 +57,7 @@ export class App implements OnDestroy {
     ['≡', 'Auditoría'],
     ['☺', 'Usuarios'],
     ['⚙', 'Configuración'],
+    ['$', 'Inversiones'],
   ];
   // Permisos que dan acceso a cada página; Resumen es para todos y Usuarios solo para el administrador.
   private navNeeds: Record<string, string[]> = {
@@ -219,7 +222,9 @@ export class App implements OnDestroy {
     return this.nav.filter((n) =>
       n[1] === 'Usuarios' || n[1] === 'Configuración'
         ? this.isAdmin()
-        : !this.navNeeds[n[1]] || this.can(...this.navNeeds[n[1]]),
+        : n[1] === 'Inversiones'
+          ? this.user()?.['features']?.['invest'] === true
+          : !this.navNeeds[n[1]] || this.can(...this.navNeeds[n[1]]),
     );
   }
   loaded(name: string) {
@@ -251,6 +256,9 @@ export class App implements OnDestroy {
       low: false,
     };
   }
+  // El apartado de inversiones usa la misma sesión y el mismo token CSRF que el resto de la app.
+  investApi = (path: string, body?: unknown, extra?: Record<string, string>, method?: string) =>
+    this.request(path, body, extra, method);
   async request(
     path: string,
     body?: unknown,
@@ -405,6 +413,8 @@ export class App implements OnDestroy {
     if (p === 'Usuarios') void this.whenIdle(() => this.loadUsers());
     if (p === 'Configuración') void this.whenIdle(() => this.loadSettings());
     if (p === 'Compras') void this.loadDrafts();
+    if (p === 'Inversiones' && !this.investCmp())
+      void import('./invest').then((m) => this.investCmp.set(m.Invest));
   }
   money(v: unknown) {
     return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(
