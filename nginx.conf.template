@@ -6,6 +6,8 @@ map $http_x_forwarded_proto $external_scheme {
 server {
  listen 0.0.0.0:80;
  server_tokens off;
+ # Fotos y PDF de facturas: el backend admite hasta 8 MB.
+ client_max_body_size 10m;
  root /usr/share/nginx/html;
  resolver 127.0.0.11 valid=30s ipv6=off;
  set $backend_url "${API_UPSTREAM}";

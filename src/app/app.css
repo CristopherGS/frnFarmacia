@@ -1127,3 +1127,44 @@ input[type='color'] {
   padding: 3px;
   cursor: pointer;
 }
+
+.upload-button {
+  display: inline-block;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.invoices {
+  margin-bottom: 20px;
+}
+.invoices small {
+  display: block;
+  color: #8a978f;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.invoice-preview {
+  margin: 0 0 12px;
+  text-align: center;
+}
+.invoice-preview img {
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: 6px;
+  border: 1px solid #e3ebde;
+}
+.line-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #5c8255;
+}
+.line-hint.warn {
+  color: #b6873b;
+  font-weight: 600;
+}
+.receipt-line.needs-review {
+  border-left: 3px solid #e4b44f;
+  padding-left: 10px;
+}
+.invoices td .text-button + .text-button {
+  margin-left: 16px;
+}
