@@ -18,8 +18,23 @@ const access = {
 describe('Permisos y administración de usuarios', () => {
   let app: App;
   let fixture: ReturnType<typeof TestBed.createComponent<App>>;
-  const as = (role: string, permissions: string[]) =>
-    app.user.set({ username: 'u', role, permissions });
+  const everything = [
+    'POS_SELL',
+    'SALES_VIEW',
+    'CASH_VIEW',
+    'CASH_MANAGE',
+    'CATALOG_VIEW',
+    'CATALOG_MANAGE',
+    'INVENTORY_VIEW',
+    'COSTS_VIEW',
+    'PURCHASES_VIEW',
+    'PURCHASES_RECEIVE',
+    'SUPPLIERS_VIEW',
+    'SUPPLIERS_MANAGE',
+    'AUDIT_VIEW',
+  ];
+  const as = (role: string, permissions: string[], modules = ['CASH', 'AUDIT', 'RX']) =>
+    app.user.set({ username: 'u', role, permissions, modules });
   beforeEach(() => {
     vi.spyOn(App.prototype, 'restore').mockResolvedValue(undefined);
     fixture = TestBed.createComponent(App);
@@ -36,7 +51,7 @@ describe('Permisos y administración de usuarios', () => {
   });
 
   it('el administrador ve todo, incluida la administración de usuarios', () => {
-    as('ADMIN', []);
+    as('ADMIN', everything);
     const pages = app.visibleNav().map((n) => n[1]);
     expect(pages).toContain('Usuarios');
     expect(pages).toContain('Auditoría');

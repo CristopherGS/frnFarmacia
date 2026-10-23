@@ -53,6 +53,7 @@ export class App implements OnDestroy {
     ['↗', 'Ventas'],
     ['≡', 'Auditoría'],
     ['☺', 'Usuarios'],
+    ['⚙', 'Configuración'],
   ];
   // Permisos que dan acceso a cada página; Resumen es para todos y Usuarios solo para el administrador.
   private navNeeds: Record<string, string[]> = {
@@ -74,6 +75,18 @@ export class App implements OnDestroy {
   };
   roleKeys = Object.keys(this.roleNames);
   perms = computed(() => new Set<string>(this.user()?.['permissions'] ?? []));
+  brand = signal({ name: 'SG Farma', noun: 'farmacia', type: 'FARMACIA', color: '#1c765b' });
+  brandHead = computed(() => this.brand().name.trim().split(/\s+/).slice(0, -1).join(' '));
+  brandTail = computed(() => this.brand().name.trim().split(/\s+/).at(-1) ?? '');
+  modules = computed(() => new Set<string>(this.user()?.['modules'] ?? []));
+  rxOn = computed(() => this.modules().has('RX'));
+  settings = signal<Row | null>(null);
+  settingsForm = this.emptySettingsForm();
+  keys = signal<Row[]>([]);
+  keyForm = { label: '', permissions: [] as string[] };
+  newSecret = signal('');
+  createdKey = signal('');
+  webhookResult = signal('');
   isAdmin = computed(() => this.user()?.['role'] === 'ADMIN');
   users = signal<Row[]>([]);
   access = signal<{
@@ -118,13 +131,14 @@ export class App implements OnDestroy {
     );
   });
   posResults = computed(() => this.posMatches().slice(0, this.posLimit));
-  needsRx = computed(() => this.cart().some((l) => l['requires_rx']));
+  needsRx = computed(() => this.rxOn() && this.cart().some((l) => l['requires_rx']));
   today = new Intl.DateTimeFormat('es-GT', {
     dateStyle: 'full',
     timeZone: 'America/Guatemala',
   }).format(new Date());
   dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(new Date());
   constructor() {
+    void this.loadBrand();
     void this.restore();
     this.cashTimer = setInterval(() => {
       if (
@@ -173,8 +187,10 @@ export class App implements OnDestroy {
   activeCash() {
     return this.rows('cash').find((c) => !c['closed_at']);
   }
+  // /auth/me ya entrega los permisos vigentes (el administrador tiene todos, menos los de módulos
+  // apagados), así que un solo criterio sirve para todos.
   can(...keys: string[]) {
-    return this.isAdmin() || keys.some((k) => this.perms().has(k));
+    return keys.some((k) => this.perms().has(k));
   }
   canWrite() {
     return this.can('CATALOG_MANAGE');
@@ -187,7 +203,7 @@ export class App implements OnDestroy {
   }
   visibleNav() {
     return this.nav.filter((n) =>
-      n[1] === 'Usuarios'
+      n[1] === 'Usuarios' || n[1] === 'Configuración'
         ? this.isAdmin()
         : !this.navNeeds[n[1]] || this.can(...this.navNeeds[n[1]]),
     );
@@ -237,7 +253,7 @@ export class App implements OnDestroy {
         this.pendingScan = null;
       }
       let message = [502, 503, 504].includes(r.status)
-        ? 'El servicio de la farmacia no está disponible. Intenta de nuevo en unos momentos.'
+        ? 'El servicio no está disponible. Intenta de nuevo en unos momentos.'
         : r.status === 403
           ? 'No tienes permiso para esta acción. Pide acceso al administrador.'
           : 'No se pudo completar la operación (' + r.status + ').';
@@ -260,6 +276,12 @@ export class App implements OnDestroy {
     } finally {
       this.busy.set(false);
     }
+  }
+  // Si se entra a una página mientras otra carga (por ejemplo justo después de iniciar sesión),
+  // espera su turno en lugar de ignorar el clic.
+  private async whenIdle(fn: () => Promise<void>) {
+    for (let i = 0; i < 40 && this.busy(); i++) await new Promise((r) => setTimeout(r, 250));
+    await this.run(fn);
   }
   async restore() {
     try {
@@ -353,7 +375,8 @@ export class App implements OnDestroy {
     this.search.set('');
     this.error.set('');
     this.message.set('');
-    if (p === 'Usuarios') void this.run(() => this.loadUsers());
+    if (p === 'Usuarios') void this.whenIdle(() => this.loadUsers());
+    if (p === 'Configuración') void this.whenIdle(() => this.loadSettings());
   }
   money(v: unknown) {
     return new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(
@@ -527,9 +550,9 @@ export class App implements OnDestroy {
     return this.userForm.role === 'ADMIN' || this.userForm.permissions.includes(key);
   }
   // Dar un permiso da también los que necesita; quitarlo quita los que dependen de él.
-  togglePermission(key: string, on: boolean) {
+  private withPermission(list: string[], key: string, on: boolean) {
     const implies = this.access()?.implies ?? {};
-    const set = new Set(this.userForm.permissions);
+    const set = new Set(list);
     if (on) {
       set.add(key);
       (implies[key] ?? []).forEach((k) => set.add(k));
@@ -537,7 +560,13 @@ export class App implements OnDestroy {
       set.delete(key);
       for (const [k, needs] of Object.entries(implies)) if (needs.includes(key)) set.delete(k);
     }
-    this.userForm.permissions = [...set];
+    return [...set];
+  }
+  togglePermission(key: string, on: boolean) {
+    this.userForm.permissions = this.withPermission(this.userForm.permissions, key, on);
+  }
+  toggleKeyPermission(key: string, on: boolean) {
+    this.keyForm.permissions = this.withPermission(this.keyForm.permissions, key, on);
   }
   permissionSummary(u: Row) {
     return u['role'] === 'ADMIN'
@@ -589,15 +618,107 @@ export class App implements OnDestroy {
     if (!this.user() || this.busy()) return;
     try {
       const me = await this.request('/auth/me');
-      if (
-        JSON.stringify([me['role'], me['permissions']]) ===
-        JSON.stringify([this.user()!['role'], this.user()!['permissions']])
-      )
-        return;
+      const snapshot = (u: Row) => JSON.stringify([u['role'], u['permissions'], u['modules']]);
+      if (snapshot(me) === snapshot(this.user()!)) return;
       this.user.set(me);
       if (!this.visibleNav().some((n) => n[1] === this.page())) this.page.set('Resumen');
       await this.refresh();
     } catch {}
+  }
+  emptySettingsForm() {
+    return {
+      name: '',
+      type: 'FARMACIA',
+      color: '#1c765b',
+      modules: [] as string[],
+      webhookUrl: '',
+    };
+  }
+  // Nombre y color del negocio: se leen sin iniciar sesión para la pantalla de acceso.
+  async loadBrand() {
+    try {
+      const brand = await this.request('/settings/public');
+      this.brand.set(brand);
+      document.title = brand.name + ' · Control interno';
+      document.documentElement.style.setProperty('--brand', brand.color);
+    } catch {}
+  }
+  async loadSettings() {
+    const [settings, keys, access] = await Promise.all([
+      this.request('/settings'),
+      this.request('/integrations/keys'),
+      this.access() ?? this.request('/users/permissions'),
+    ]);
+    this.settings.set(settings);
+    this.keys.set(keys);
+    this.access.set(access);
+    this.settingsForm = {
+      name: settings['name'],
+      type: settings['type'],
+      color: settings['color'],
+      modules: [...settings['modules']],
+      webhookUrl: settings['webhookUrl'],
+    };
+  }
+  // Cada tipo de negocio trae su plantilla de módulos; después se ajusta uno por uno.
+  applyBusinessType(type: string) {
+    const template = (this.settings()?.['types'] ?? []).find((t: Row) => t['key'] === type);
+    this.settingsForm.type = type;
+    this.settingsForm.modules = [...(template?.['modules'] ?? [])];
+  }
+  toggleModule(key: string, on: boolean) {
+    const set = new Set(this.settingsForm.modules);
+    if (on) set.add(key);
+    else set.delete(key);
+    this.settingsForm.modules = [...set];
+  }
+  async saveSettings() {
+    await this.run(async () => {
+      await this.request('/settings', this.settingsForm, {}, 'PUT');
+      await this.loadBrand();
+      await this.loadSettings();
+      // Los módulos cambian lo que se ve en todo el menú: se recarga el acceso de esta sesión.
+      this.user.set(await this.request('/auth/me'));
+      await this.refresh();
+      this.message.set('Configuración guardada.');
+    });
+  }
+  async newWebhookSecret() {
+    await this.run(async () => {
+      this.newSecret.set((await this.request('/settings/webhook/secret', {})).secret);
+      await this.loadSettings();
+    });
+  }
+  async testWebhook() {
+    await this.run(async () => {
+      const r = await this.request('/settings/webhook/test', {});
+      this.webhookResult.set(
+        r.ok ? 'Conexión correcta: n8n respondió ' + r.status + '.' : 'Falló: ' + r.error,
+      );
+    });
+  }
+  async createKey() {
+    await this.run(async () => {
+      const created = await this.request('/integrations/keys', this.keyForm);
+      this.createdKey.set(created.key);
+      this.keyForm = { label: '', permissions: [] };
+      this.keys.set(await this.request('/integrations/keys'));
+    });
+  }
+  async revokeKey(k: Row) {
+    await this.run(async () => {
+      await this.request('/integrations/keys/' + k['id'], {}, {}, 'DELETE');
+      this.keys.set(await this.request('/integrations/keys'));
+      this.message.set('Llave revocada: ' + k['label'] + '.');
+    });
+  }
+  async copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.message.set('Copiado al portapapeles.');
+    } catch {
+      this.error.set('No se pudo copiar; selecciónalo y cópialo a mano.');
+    }
   }
   async saveProduct() {
     await this.run(async () => {

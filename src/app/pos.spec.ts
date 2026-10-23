@@ -46,6 +46,7 @@ describe('Punto de venta', () => {
       username: 'caja',
       role: 'CASHIER',
       permissions: ['POS_SELL', 'SALES_VIEW', 'CASH_VIEW', 'CASH_MANAGE', 'CATALOG_VIEW'],
+      modules: ['CASH', 'AUDIT', 'RX'],
     });
     app.data.set({
       presentations: [caja, tableta, jarabe],

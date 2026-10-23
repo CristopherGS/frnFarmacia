@@ -250,7 +250,7 @@ h3 {
 .primary {
   border: 0;
   border-radius: 7px;
-  background: #1c765b;
+  background: var(--brand, #1c765b);
   color: white;
   padding: 13px 19px;
   font-weight: 600;
@@ -258,7 +258,7 @@ h3 {
   box-shadow: 0 3px 5px #123b2110;
 }
 .primary:hover {
-  background: #115f47;
+  background: color-mix(in srgb, var(--brand, #1c765b) 82%, black);
 }
 button:disabled {
   opacity: 0.45;
@@ -1072,4 +1072,58 @@ select:focus {
   .perm-group {
     grid-template-columns: 1fr;
   }
+}
+h4 {
+  margin: 22px 0 6px;
+  font-size: 13px;
+}
+.settings-card {
+  padding: 4px 24px 22px;
+  margin-bottom: 20px;
+}
+.settings-card > .card-heading {
+  padding-left: 0;
+  padding-right: 0;
+}
+.module-row {
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+}
+.module-row small {
+  display: block;
+  color: #8a978f;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.module-row.soon {
+  opacity: 0.6;
+}
+.inline-actions {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.secret {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px dashed #cfe0cc;
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  user-select: all;
+}
+.key-form {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #edf1e9;
+}
+input[type='color'] {
+  width: 72px;
+  min-height: 40px;
+  padding: 3px;
+  cursor: pointer;
 }

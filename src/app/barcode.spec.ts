@@ -29,7 +29,26 @@ describe('Flujos por código de barras', () => {
     vi.spyOn(App.prototype, 'restore').mockResolvedValue(undefined);
     fixture = TestBed.createComponent(App);
     app = fixture.componentInstance;
-    app.user.set({ username: 'admin', role: 'ADMIN' });
+    app.user.set({
+      username: 'admin',
+      role: 'ADMIN',
+      permissions: [
+        'POS_SELL',
+        'SALES_VIEW',
+        'CASH_VIEW',
+        'CASH_MANAGE',
+        'CATALOG_VIEW',
+        'CATALOG_MANAGE',
+        'INVENTORY_VIEW',
+        'COSTS_VIEW',
+        'PURCHASES_VIEW',
+        'PURCHASES_RECEIVE',
+        'SUPPLIERS_VIEW',
+        'SUPPLIERS_MANAGE',
+        'AUDIT_VIEW',
+      ],
+      modules: ['CASH', 'AUDIT', 'RX'],
+    });
     app.data.set({ presentations: [presentation] });
   });
   afterEach(() => {

@@ -98,7 +98,7 @@ function proxy(req, res) {
     res.writeHead(e.code === 'ETIMEDOUT' ? 504 : 502, {
       'Content-Type': 'text/plain; charset=utf-8',
     });
-    res.end('El servicio de la farmacia no está disponible.');
+    res.end('El servicio no está disponible.');
   });
   req.pipe(out);
 }

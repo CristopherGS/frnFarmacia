@@ -2,9 +2,12 @@
   <div class="login">
     <section class="login-story">
       <div class="brand">
-        ✚ <span>SG <b>Farma</b></span>
+        ✚
+        <span
+          >{{ brandHead() }} <b>{{ brandTail() }}</b></span
+        >
       </div>
-      <span class="eyebrow">TU FARMACIA, EN ORDEN</span>
+      <span class="eyebrow">{{ ('TU ' + brand().noun + ', EN ORDEN').toUpperCase() }}</span>
       <h1>Más claridad.<br />Mejor control.<br /><em>Cada día.</em></h1>
       <p>
         Productos, inventario y ventas en un solo lugar.<br />El cuidado empieza con una buena
@@ -13,7 +16,7 @@
       <small>◈ Control por lotes &nbsp; · &nbsp; Q Guatemala</small>
     </section>
     <form class="login-form" (ngSubmit)="login()">
-      <span class="eyebrow">BIENVENIDO A SG FARMA</span>
+      <span class="eyebrow">{{ ('BIENVENIDO A ' + brand().name).toUpperCase() }}</span>
       <h2>Inicia tu jornada</h2>
       <p class="muted">Ingresa con tu cuenta personal para continuar.</p>
       <label
@@ -43,7 +46,10 @@
 } @else {
   <aside class="sidebar">
     <a class="brand" (click)="go('Resumen')"
-      >✚ <span>SG <b>Farma</b></span></a
+      >✚
+      <span
+        >{{ brandHead() }} <b>{{ brandTail() }}</b></span
+      ></a
     >
     <div class="branch">
       ⌂
@@ -78,7 +84,7 @@
   <main>
     <header>
       <div class="breadcrumb">
-        Mi farmacia <span>/</span> <strong>{{ page() }}</strong>
+        Mi {{ brand().noun }} <span>/</span> <strong>{{ page() }}</strong>
       </div>
       <div class="header-right">
         <span class="online"></span> Conectado
@@ -89,7 +95,7 @@
       <div class="page-heading">
         <div>
           <span class="eyebrow">{{ today }}</span>
-          <h1>{{ page() === 'Resumen' ? 'Tu farmacia, de un vistazo' : page() }}</h1>
+          <h1>{{ page() === 'Resumen' ? 'Tu ' + brand().noun + ', de un vistazo' : page() }}</h1>
           <p class="muted">
             {{
               page() === 'Resumen'
@@ -280,7 +286,13 @@
                     </td>
                     <td>
                       {{
-                        p['controlled'] ? 'Controlado' : p['requires_rx'] ? 'Con receta' : 'General'
+                        rxOn()
+                          ? p['controlled']
+                            ? 'Controlado'
+                            : p['requires_rx']
+                              ? 'Con receta'
+                              : 'General'
+                          : 'General'
                       }}
                     </td>
                   </tr>
@@ -461,7 +473,7 @@
                         ? 'Sin existencias disponibles'
                         : stock(p['product_id']) + ' unidades disponibles'
                   }}</small>
-                  @if (p['requires_rx']) {
+                  @if (rxOn() && p['requires_rx']) {
                     <small class="pill warning">Requiere receta</small>
                   }
                 </button>
@@ -513,7 +525,7 @@
                 ><b>{{ l['product_name'] }}</b
                 ><small
                   >{{ l['name'] }} · {{ money(l['price']) }}
-                  @if (l['requires_rx']) {
+                  @if (rxOn() && l['requires_rx']) {
                     · <span class="rx">Requiere receta</span>
                   }
                 </small>
@@ -783,7 +795,229 @@
           </table>
         </section>
       }
-      <footer>SG Farma <span>Gestión farmacéutica · Control interno</span></footer>
+      @if (page() === 'Configuración') {
+        @if (settings(); as cfg) {
+          <section class="card settings-card">
+            <div class="card-heading">
+              <div>
+                <h3>Tu negocio</h3>
+                <p class="muted">Nombre, tipo, color y módulos. Aplica a todo tu equipo.</p>
+              </div>
+            </div>
+            <form (ngSubmit)="saveSettings()">
+              <div class="form-grid">
+                <label
+                  >Nombre del negocio<input
+                    name="bn"
+                    [(ngModel)]="settingsForm.name"
+                    required
+                    minlength="2"
+                    maxlength="120"
+                /></label>
+                <label
+                  >Tipo de negocio<select
+                    name="bt"
+                    [ngModel]="settingsForm.type"
+                    (ngModelChange)="applyBusinessType($event)"
+                  >
+                    @for (t of cfg['types']; track t['key']) {
+                      <option [value]="t['key']">{{ t['label'] }}</option>
+                    }
+                  </select></label
+                >
+                <label
+                  >Color principal<input name="bc" type="color" [(ngModel)]="settingsForm.color"
+                /></label>
+                <label
+                  >URL del webhook de n8n<input
+                    name="wh"
+                    type="url"
+                    placeholder="https://n8n.tu-dominio.com/webhook/..."
+                    [(ngModel)]="settingsForm.webhookUrl"
+                /></label>
+              </div>
+              <h4>Módulos</h4>
+              <p class="muted">
+                Cambiar el tipo aplica su plantilla; después prende o apaga cada módulo. Un módulo
+                apagado quita sus pantallas y permisos para todos.
+              </p>
+              @for (m of cfg['catalog']; track m['key']) {
+                <label class="check module-row"
+                  ><input
+                    type="checkbox"
+                    [name]="'m-' + m['key']"
+                    [checked]="settingsForm.modules.includes(m['key'])"
+                    (change)="toggleModule(m['key'], $any($event.target).checked)"
+                  />
+                  <span
+                    ><b>{{ m['label'] }}</b
+                    ><small>{{ m['description'] }}</small></span
+                  ></label
+                >
+              }
+              @for (m of cfg['roadmap']; track m['key']) {
+                <label class="check module-row soon"
+                  ><input type="checkbox" disabled [name]="'r-' + m['key']" />
+                  <span
+                    ><b>{{ m['label'] }}</b> <span class="pill">Próximamente</span
+                    ><small>{{ m['description'] }}</small></span
+                  ></label
+                >
+              }
+              <div class="dialog-actions">
+                <button class="primary" [disabled]="busy()">Guardar configuración</button>
+              </div>
+            </form>
+          </section>
+          <section class="card settings-card">
+            <div class="card-heading">
+              <div>
+                <h3>Conexión con n8n: secreto y prueba</h3>
+                <p class="muted">
+                  El sistema avisa a n8n de ventas, compras, stock bajo, vencimientos, cierres de
+                  caja y cambios de acceso. Cada aviso va firmado con este secreto.
+                </p>
+              </div>
+            </div>
+            <p class="muted">
+              Secreto: {{ cfg['webhookSecretSet'] ? 'configurado' : 'sin generar' }} · Guarda la URL
+              antes de enviar la prueba.
+            </p>
+            <div class="inline-actions">
+              <button
+                type="button"
+                class="text-button"
+                [disabled]="busy()"
+                (click)="newWebhookSecret()"
+              >
+                {{ cfg['webhookSecretSet'] ? 'Generar un secreto nuevo' : 'Generar secreto' }}
+              </button>
+              <button
+                type="button"
+                class="text-button"
+                [disabled]="busy() || !cfg['webhookUrl'] || !cfg['webhookSecretSet']"
+                (click)="testWebhook()"
+              >
+                Enviar prueba a n8n
+              </button>
+            </div>
+            @if (newSecret()) {
+              <div class="alert success">
+                Copia este secreto ahora y pégalo en n8n; no se vuelve a mostrar.
+                <code class="secret">{{ newSecret() }}</code>
+                <button type="button" class="text-button" (click)="copy(newSecret())">
+                  Copiar
+                </button>
+              </div>
+            }
+            @if (webhookResult()) {
+              <p class="muted" role="status">{{ webhookResult() }}</p>
+            }
+            @if (cfg['queue'].length) {
+              <p class="muted">
+                Cola de eventos:
+                @for (q of cfg['queue']; track q['status']) {
+                  <span class="pill">{{ q['status'] }}: {{ q['total'] }}</span>
+                }
+              </p>
+            }
+          </section>
+          <section class="card settings-card">
+            <div class="card-heading">
+              <div>
+                <h3>Llaves de API para n8n</h3>
+                <p class="muted">
+                  Cada llave es una cuenta de servicio que solo puede lo que le des aquí. Se muestra
+                  una sola vez al crearla y se puede revocar en cualquier momento.
+                </p>
+              </div>
+            </div>
+            @if (createdKey()) {
+              <div class="alert success">
+                Copia la llave ahora; no se vuelve a mostrar. Úsala en n8n como
+                <b>Authorization: Bearer</b>.
+                <code class="secret">{{ createdKey() }}</code>
+                <button type="button" class="text-button" (click)="copy(createdKey())">
+                  Copiar
+                </button>
+              </div>
+            }
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Llave</th>
+                  <th>Permisos</th>
+                  <th>Último uso</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (k of keys(); track k['id']) {
+                  <tr>
+                    <td>
+                      <b>{{ k['label'] }}</b>
+                    </td>
+                    <td>{{ k['prefix'] }}…</td>
+                    <td>{{ k['permissions'].length }}</td>
+                    <td>{{ k['last_used_at'] ? date(k['last_used_at']) : 'Nunca' }}</td>
+                    <td>
+                      @if (k['revoked_at']) {
+                        <span class="pill warning">Revocada</span>
+                      } @else {
+                        <button class="text-button" (click)="revokeKey(k)">Revocar</button>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="5" class="empty">Aún no hay llaves.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+            <form class="key-form" (ngSubmit)="createKey()">
+              <label
+                >Nombre de la llave<input
+                  name="kl"
+                  [(ngModel)]="keyForm.label"
+                  required
+                  minlength="2"
+                  maxlength="60"
+                  placeholder="Ej. n8n reportes"
+              /></label>
+              @for (g of permissionGroups(); track g.name) {
+                <fieldset class="perm-group">
+                  <legend>{{ g.name }}</legend>
+                  @for (p of g.items; track p.key) {
+                    <label class="check"
+                      ><input
+                        type="checkbox"
+                        [name]="'k-' + p.key"
+                        [checked]="keyForm.permissions.includes(p.key)"
+                        (change)="toggleKeyPermission(p.key, $any($event.target).checked)"
+                      />
+                      {{ p.label }}</label
+                    >
+                  }
+                </fieldset>
+              }
+              <div class="dialog-actions">
+                <button class="primary" [disabled]="busy() || !keyForm.permissions.length">
+                  Crear llave
+                </button>
+              </div>
+            </form>
+          </section>
+        }
+      }
+      <footer>
+        {{ brand().name }}
+        <span
+          >{{ brand().type === 'FARMACIA' ? 'Gestión farmacéutica' : 'Gestión comercial' }} ·
+          Control interno</span
+        >
+      </footer>
     </div>
   </main>
 }
@@ -815,12 +1049,13 @@
         <form (ngSubmit)="saveProduct()">
           <div class="form-grid">
             <label>Nombre comercial<input name="name" [(ngModel)]="product.name" required /></label
-            ><label>SKU<input name="sku" [(ngModel)]="product.sku" required /></label
-            ><label
-              >Principio activo / genérico<input
-                name="generic"
-                [(ngModel)]="product.genericName" /></label
-            ><label>Unidad base<input name="base" [(ngModel)]="product.baseUnit" required /></label
+            ><label>SKU<input name="sku" [(ngModel)]="product.sku" required /></label>
+            @if (rxOn()) {
+              <label
+                >Principio activo / genérico<input name="generic" [(ngModel)]="product.genericName"
+              /></label>
+            }
+            <label>Unidad base<input name="base" [(ngModel)]="product.baseUnit" required /></label
             ><label>Categoría<input name="category" [(ngModel)]="product.category" /></label
             ><label
               >Stock mínimo<input
@@ -831,13 +1066,16 @@
                 required
             /></label>
           </div>
+          @if (rxOn()) {
+            <label class="check"
+              ><input name="rx" type="checkbox" [(ngModel)]="product.requiresRx" /> Requiere
+              receta</label
+            ><label class="check"
+              ><input name="controlled" type="checkbox" [(ngModel)]="product.controlled" />
+              Controlado (venta bloqueada)</label
+            >
+          }
           <label class="check"
-            ><input name="rx" type="checkbox" [(ngModel)]="product.requiresRx" /> Requiere
-            receta</label
-          ><label class="check"
-            ><input name="controlled" type="checkbox" [(ngModel)]="product.controlled" /> Controlado
-            (venta bloqueada)</label
-          ><label class="check"
             ><input name="fractional" type="checkbox" [(ngModel)]="product.fractional" />
             Fraccionamiento autorizado para este producto</label
           >
@@ -1154,7 +1392,7 @@
         <button class="icon-button" (click)="ticket.set(null)">✕</button>
       </div>
       <div class="ticket-content">
-        <h2>✚ SG Farma</h2>
+        <h2>✚ {{ brand().name }}</h2>
         <p>CONTROL INTERNO · #{{ t['sale']['id'] }}</p>
         <p>{{ date(t['sale']['created_at']) }}</p>
         <hr />
